@@ -126,6 +126,7 @@ export function ReportView({
   // নির্ভর করে না — আজকের তারিখ থেকেই ঠিক হয়।
   const ledgerMonth = U.addMonths(U.currentMonth(), -1);
   const ledgerMonthLabel = U.monthLabel(ledgerMonth);
+  const ledgerMonthShort = U.monthLabelShort(ledgerMonth);
 
   // এই ট্যাব খোলা থাকলে নেভবারের মাস ড্রপডাউন নিষ্ক্রিয় থাকে
   useEffect(() => {
@@ -654,11 +655,11 @@ export function ReportView({
 
             <div className="print-totals" style={{ marginTop: '12px' }}>
               <div className="box">
-                মোট পরিশোধিত ({monthShort} পর্যন্ত):{' '}
+                মোট পরিশোধিত ({ledgerMonthShort} পর্যন্ত):{' '}
                 <b className="amt-paid">{U.bnNumber(ledgerStatus.paid)}/-</b>
               </div>
               <div className="box" style={{ border: '2px solid #000' }}>
-                বকেয়া পাওনা ({monthShort} পর্যন্ত):{' '}
+                বকেয়া পাওনা ({ledgerMonthShort} পর্যন্ত):{' '}
                 <b className="amt-due">{U.bnNumber(ledgerStatus.due)}/-</b>
               </div>
             </div>
