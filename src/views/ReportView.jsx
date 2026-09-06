@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../context/DataContext';
 import * as Calc from '../utils/calc';
 import * as U from '../utils/format';
@@ -82,7 +82,7 @@ export function ReportView({
   autoPrint = false,
   onAutoPrintDone
 }) {
-  const { data, selectedMonth, setMonthLock } = useData();
+  const { data, selectedMonth, setSelectedMonth, setMonthLock } = useData();
   const [reportType, setReportType] = useState(defaultReport);
   const [selectedLedgerFlatId, setSelectedLedgerFlatId] = useState(data.flats[0]?.id || '');
 
@@ -103,6 +103,34 @@ export function ReportView({
   }, [autoPrint, onAutoPrintDone]);
 
   // আয়-ব্যয় হিসাবায়ন — আদায়কারীদের সারি ledgerSummary নিজেই বসিয়ে দেয়
+  // আয়-ব্যয় হিসাবায়ন খুললেই আগের মাস দেখানো — চলতি মাস এখনো চলছে,
+  // তার হিসাব অসম্পূর্ণ বলে খুলেই সেটি দেখালে ভুল বোঝাবুঝি হয়। কেবল
+  // ট্যাবে ঢোকার মুহূর্তে চলতি মাস বাছা থাকলে সরানো হয়; ড্রপডাউন থেকে
+  // পরে যেকোনো মাস (চলতি মাসও) দেখা যায়। লেজার-এন্ট্রি পাতার "ছাপুন"
+  // দিয়ে এলে (autoPrint) নয় — তখন যে মাসে এন্ট্রি হচ্ছিল সেটিই ছাপে।
+  const autoPrintRef = useRef(autoPrint);
+  useEffect(() => { autoPrintRef.current = autoPrint; }, [autoPrint]);
+  const cashNudgeRef = useRef(null);
+  useEffect(() => {
+    if (reportType === 'cashbook' && !autoPrintRef.current) {
+      setSelectedMonth((m) => {
+        if (m !== U.currentMonth()) return m;
+        cashNudgeRef.current = { from: m, to: U.addMonths(m, -1) };
+        return cashNudgeRef.current.to;
+      });
+    }
+    return () => {
+      // আয়-ব্যয় থেকে বেরোনোর সময়: মাসটি আমরাই নামিয়ে থাকলে, আর
+      // ব্যবহারকারী মাঝখানে নিজে না বদলে থাকলে, আগের মাস ফিরিয়ে দিই —
+      // নইলে মাসিক সারসংক্ষেপে ফিরে অবাক হতে হয় কেন মাস পিছিয়ে আছে।
+      const nudge = cashNudgeRef.current;
+      cashNudgeRef.current = null;
+      if (reportType === 'cashbook' && nudge) {
+        setSelectedMonth((m) => (m === nudge.to ? nudge.from : m));
+      }
+    };
+  }, [reportType, setSelectedMonth]);
+
   const cash = Calc.ledgerSummary(data, selectedMonth);
   const cashDeficit = cash.balance < 0;
   // মাসটি এখনো চলছে — এর হিসাব মাস শেষ হওয়ার আগে তৈরি হওয়ার কথা নয়
@@ -146,6 +174,25 @@ export function ReportView({
   // হেডারের তারিখ = রিপোর্ট যতটুকু সময় ঢেকেছে তার শেষ দিন। লেজার ছাড়া
   // বাকি সব রিপোর্ট নির্বাচিত মাস পর্যন্ত, তাই তারিখও সেই মাসের শেষ দিন।
   const headDateMonth = reportType === 'ledger' ? ledgerMonth : selectedMonth;
+
+  // ---- ফোনে "এক নজরে পুরো পাতা" ----
+  // শিটটি সবসময় আসল A4 মাপে (৭৯৪px) আঁকা হয়; ফোনে তাই পাশে সরিয়ে
+  // দেখতে হয়। এই টগলটি চাপলে পুরো পাতাটি পর্দার মাপে ছোট করে দেখানো
+  // হয় — লেখা ছোট হলেও টেবিলের গড়ন ও কোন তথ্য কোথায় তা এক নজরে বোঝা
+  // যায়। ছাপায় এর কোনো প্রভাব নেই (print.css এ zoom: 1 !important)।
+  const scrollRef = useRef(null);
+  const [fitSheet, setFitSheet] = useState(false);
+  const [fitZoom, setFitZoom] = useState(0.46);
+  useEffect(() => {
+    if (!fitSheet) return;
+    const measure = () => {
+      const el = scrollRef.current;
+      if (el && el.clientWidth) setFitZoom(Math.min(1, el.clientWidth / 794));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [fitSheet]);
 
   const ledgerFlat = data.flats.find((f) => f.id === selectedLedgerFlatId) || data.flats[0];
   const ledgerRows = ledgerFlat ? Calc.ledger(data, ledgerFlat, ledgerMonth) : [];
@@ -246,12 +293,27 @@ export function ReportView({
       {/* ফোনে রিপোর্ট পাশে সরিয়ে দেখতে হয় — সেটি জানিয়ে দেওয়া */}
       <div className="report-scroll-hint no-print">
         <span>↔</span>
-        <span>পুরো রিপোর্ট দেখতে আঙুল দিয়ে পাশে সরান</span>
+        <span>
+          {fitSheet
+            ? 'পুরো পাতা এক নজরে — লেখা পড়তে আসল মাপে ফিরুন'
+            : 'পুরো রিপোর্ট দেখতে আঙুল দিয়ে পাশে সরান'}
+        </span>
+        <button
+          type="button"
+          className="btn-fit"
+          onClick={() => setFitSheet((v) => !v)}
+        >
+          {fitSheet ? 'আসল মাপ' : 'এক নজরে পুরো পাতা'}
+        </button>
       </div>
 
       {/* ফোনে শিটটি পাশে সরিয়ে দেখার ঘর। ডেস্কটপে এটি নিছক একটি
           মোড়ক — কোনো প্রভাব ফেলে না।                              */}
-      <div className="report-scroll">
+      <div
+        className={fitSheet ? 'report-scroll is-fit' : 'report-scroll'}
+        ref={scrollRef}
+        style={fitSheet ? { '--fit-zoom': fitZoom } : undefined}
+      >
       {/* Printable Sheet Container */}
       <div
         className="card print-sheet"
@@ -296,7 +358,7 @@ export function ReportView({
         {/* REPORT 1: Monthly Summary */}
         {reportType === 'monthly' && (
           <>
-            <table className="print-table">
+            <table className="print-table tbl-monthly">
               <thead>
                 <tr>
                   <th style={{ width: '6%' }}>ক্রমিক<br />নং</th>
@@ -514,7 +576,7 @@ export function ReportView({
         {/* REPORT 2: Selective Defaulters */}
         {reportType === 'selective' && (
           <>
-            <table className="print-table">
+            <table className="print-table tbl-selective">
               <thead>
                 <tr>
                   <th style={{ width: '5%' }}>ক্রম</th>
@@ -598,7 +660,7 @@ export function ReportView({
               মোবাইল: <b>{ledgerFlat.phone || '—'}</b>
             </div>
 
-            <table className="print-table">
+            <table className="print-table tbl-ledger">
               <thead>
                 <tr>
                   <th style={{ width: '32%', textAlign: 'left' }}>মাস / বিবরণ</th>

@@ -1803,7 +1803,7 @@ table.data-table tr:focus-within select {
   .page-heading { font-size: 16.5px; }
 }
 
-@media (max-width: 900px) {
+@media screen and (max-width: 900px) {
   html, body {
     height: auto !important;
     overflow-x: hidden !important;
@@ -2234,7 +2234,8 @@ table.data-table tr:focus-within select {
   color: #0f766e;
   font-weight: 700;
 }
-.print-head .committee { font-size: 11.5px; font-weight: 600; margin-top: 1px; color: #1e293b; }
+/* কমিটির নাম — লোগোর ইটরঙা লাল (#e82828), ছোট হরফে পড়ার সুবিধায় সামান্য গাঢ় */
+.print-head .committee { font-size: 11.5px; font-weight: 600; margin-top: 1px; color: #d32626; }
 .print-head .title {
   font-size: 11.5px;
   font-weight: 700;
@@ -2445,7 +2446,7 @@ table.print-table tfoot td {
   min-width: 0;
 }
 
-@media (max-width: 900px) {
+@media screen and (max-width: 900px) {
   .report-scroll {
     overflow-x: auto;
     overflow-y: hidden;
@@ -2567,7 +2568,7 @@ table.print-table tfoot td {
   color: #64748b;
 }
 
-@media (max-width: 900px) {
+@media screen and (max-width: 900px) {
   .print-head { flex-wrap: wrap; }
   .print-head .head-date { width: 100%; text-align: center; }
   .print-signs .s { flex: 0 0 50%; }
@@ -3081,3 +3082,93 @@ table.cashbook-table tfoot tr.cashbook-note td {
 }
 
 .ln-acts { display: flex; gap: 2px; flex-shrink: 0; }
+
+
+/* ==========================================================================
+   ফোনে রিপোর্ট আরও সহজে পড়া ও দ্রুত চলা
+   ========================================================================== */
+
+/* লেজি-লোড পেজের কোড নামার ফাঁকে দেখানো বার্তা */
+.page-loading {
+  padding: 60px 20px;
+  text-align: center;
+  color: #64748b;
+  font-size: 14px;
+}
+
+/* হিন্ট বারের ডানে "এক নজরে পুরো পাতা / আসল মাপ" টগল */
+.btn-fit {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-family: inherit;
+  color: #fff;
+  background: #0369a1;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+@media screen and (max-width: 900px) {
+  /* ---- এক নজরে পুরো পাতা ----
+     zoom-এর মানটি JS মাপে: পর্দার প্রস্থ ÷ ৭৯৪ — তাতে পুরো A4 পাতাটি
+     ঠিক পর্দায় এঁটে যায়। ছাপায় প্রভাব নেই (print.css: zoom 1 !important)। */
+  /* শিটের ইনলাইন overflow: hidden (জলছাপ ক্লিপের জন্য) স্টিকি কলাম ভেঙে
+     দেয় — sticky তখন স্ক্রল-মোড়কের বদলে ওই hidden কার্ডের সাপেক্ষে
+     আটকায়। জলছাপটি এমনিতেই পাতার ভেতরে (৮০% প্রস্থ, মাঝে), তাই ফোনের
+     পর্দায় visible করলেও কিছু উপচে পড়ে না। ছাপায় নিয়মটি খাটে না।   */
+  .report-scroll .print-sheet { overflow: visible !important; }
+
+  .report-scroll.is-fit { overflow-x: hidden; }
+  .report-scroll.is-fit .print-sheet { zoom: var(--fit-zoom, 0.46); }
+
+  /* ---- পাশে সরালেও পরিচয়ের কলাম বাঁয়ে আটকে থাকে ----
+     নাম/মাস না দেখা গেলে ডানের অঙ্ক কার তা বোঝা যায় না — তাই মাসিক ও
+     বকেয়া রিপোর্টে প্রথম দুই কলাম (ক্রমিক + নাম/ফ্ল্যাট), লেজারে মাসের
+     কলামটি স্টিকি। ঘরগুলো এমনিতে স্বচ্ছ (জলছাপ দেখাতে); আটকে থাকা ঘর
+     স্বচ্ছ হলে নিচের লেখা ভেদ করে দেখা যেত, তাই এখানে অস্বচ্ছ রং। */
+  .tbl-ledger th:first-child,
+  .tbl-ledger td:first-child,
+  .tbl-monthly th:nth-child(-n + 2),
+  .tbl-monthly td:nth-child(-n + 2),
+  .tbl-selective th:nth-child(-n + 2),
+  .tbl-selective td:nth-child(-n + 2) {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #ffffff;
+  }
+  .tbl-monthly th:nth-child(2),
+  .tbl-monthly td:nth-child(2) { left: var(--stick1-monthly, 45px); }
+  .tbl-selective th:nth-child(2),
+  .tbl-selective td:nth-child(2) { left: var(--stick1-selective, 42px); }
+
+  .tbl-ledger th:first-child,
+  .tbl-monthly th:nth-child(-n + 2),
+  .tbl-selective th:nth-child(-n + 2) {
+    background: #eef1f6;
+    z-index: 3;
+  }
+  .tbl-monthly tbody tr:nth-child(even) > td:nth-child(-n + 2),
+  .tbl-selective tbody tr:nth-child(even) > td:nth-child(-n + 2),
+  .tbl-ledger tbody tr:nth-child(even) > td:first-child { background: #f7f9fb; }
+
+  /* শেষ আটকে থাকা কলামের ডানে হালকা ছায়া — কোথা থেকে বাকিটা সরে তা বোঝায় */
+  .tbl-ledger th:first-child,
+  .tbl-ledger td:first-child,
+  .tbl-monthly th:nth-child(2),
+  .tbl-monthly td:nth-child(2),
+  .tbl-selective th:nth-child(2),
+  .tbl-selective td:nth-child(2) {
+    box-shadow: 2px 0 3px rgba(15, 23, 42, 0.10);
+  }
+
+  /* ফিট-মোডে পুরোটা এমনিই দেখা যায় — স্টিকির দরকার নেই */
+  .report-scroll.is-fit td,
+  .report-scroll.is-fit th {
+    position: static !important;
+    box-shadow: none !important;
+  }
+}

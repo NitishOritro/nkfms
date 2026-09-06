@@ -178,6 +178,10 @@
     font-size: 11.5px !important;
     font-weight: 600 !important;
     margin-top: 1px !important;
+    /* লোগোর লালের সাথে মেলানো — রঙিন ছাপাতেও যেন রংটি বসে */
+    color: #d32626 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .print-head .title {

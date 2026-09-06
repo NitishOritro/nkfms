@@ -1,21 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { useAuth } from './context/AuthContext';
 import { Sidebar } from './components/Sidebar';
-import { LedgerEntryView } from './views/LedgerEntryView';
 import { Navbar } from './components/Navbar';
 import { ToastContainer } from './components/Toast';
 
 import { LoginView } from './views/LoginView';
 import { DashboardView } from './views/DashboardView';
-import { MonthlyCollectionView } from './views/MonthlyCollectionView';
-import { SingleFlatEntryView } from './views/SingleFlatEntryView';
-import { MonthlySummaryView } from './views/MonthlySummaryView';
-import { DefaultersView } from './views/DefaultersView';
-import { ReportView } from './views/ReportView';
-import { FlatManagementView } from './views/FlatManagementView';
-import { CollectorSignatoryView } from './views/CollectorSignatoryView';
-import { SettingsBackupView } from './views/SettingsBackupView';
-import { ServiceChargeEntryFormView } from './views/ServiceChargeEntryFormView';
+
+// ---------------------------------------------------------------------------
+//  বাকি পেজগুলো লেজি-লোড — যে পেজে ঢোকা হয় কেবল তখনই তার কোড নামে।
+//  এতে মোবাইল নেটওয়ার্কে প্রথম লোড অনেক হালকা হয়; লগইন ও ড্যাশবোর্ড
+//  (ঢুকেই যা দেখা যায়) আগের মতোই মূল বান্ডেলে থাকে।
+// ---------------------------------------------------------------------------
+const lazyView = (loader, name) => lazy(() => loader().then((m) => ({ default: m[name] })));
+const LedgerEntryView = lazyView(() => import('./views/LedgerEntryView'), 'LedgerEntryView');
+const MonthlyCollectionView = lazyView(() => import('./views/MonthlyCollectionView'), 'MonthlyCollectionView');
+const SingleFlatEntryView = lazyView(() => import('./views/SingleFlatEntryView'), 'SingleFlatEntryView');
+const MonthlySummaryView = lazyView(() => import('./views/MonthlySummaryView'), 'MonthlySummaryView');
+const DefaultersView = lazyView(() => import('./views/DefaultersView'), 'DefaultersView');
+const ReportView = lazyView(() => import('./views/ReportView'), 'ReportView');
+const FlatManagementView = lazyView(() => import('./views/FlatManagementView'), 'FlatManagementView');
+const CollectorSignatoryView = lazyView(() => import('./views/CollectorSignatoryView'), 'CollectorSignatoryView');
+const SettingsBackupView = lazyView(() => import('./views/SettingsBackupView'), 'SettingsBackupView');
+const ServiceChargeEntryFormView = lazyView(() => import('./views/ServiceChargeEntryFormView'), 'ServiceChargeEntryFormView');
 
 // ---------------------------------------------------------------------------
 //  পেজের নাম — ঠিকানার হ্যাশ ও ব্রাউজার ট্যাবের শিরোনাম, দুটোরই উৎস
@@ -142,6 +149,8 @@ export function App() {
           showMonthPicker={!PAGE_HAS_MONTH_PICKER.includes(currentTab)}
         />
 
+        {/* লেজি পেজের কোড নামতে যেটুকু সময় লাগে, তখন এই বার্তাটি দেখায় */}
+        <Suspense fallback={<div className="page-loading">পেজ খুলছে…</div>}>
         {currentTab === 'dashboard' && <DashboardView setCurrentTab={setCurrentTab} />}
         {currentTab === 'collection' && !isReadOnly && <MonthlyCollectionView />}
         {currentTab === 'charge-form' && !isReadOnly && <ServiceChargeEntryFormView />}
@@ -177,6 +186,7 @@ export function App() {
         {currentTab === 'flats' && !isReadOnly && <FlatManagementView />}
         {currentTab === 'collectors' && !isReadOnly && <CollectorSignatoryView />}
         {currentTab === 'settings' && !isReadOnly && <SettingsBackupView />}
+        </Suspense>
       </div>
 
       <ToastContainer />
