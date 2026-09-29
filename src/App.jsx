@@ -5,6 +5,7 @@ import { Navbar } from './components/Navbar';
 import { ToastContainer } from './components/Toast';
 
 import { LoginView } from './views/LoginView';
+import { isLocalDataMode } from './lib/supabase';
 import { DashboardView } from './views/DashboardView';
 
 // ---------------------------------------------------------------------------
@@ -12,6 +13,18 @@ import { DashboardView } from './views/DashboardView';
 //  এতে মোবাইল নেটওয়ার্কে প্রথম লোড অনেক হালকা হয়; লগইন ও ড্যাশবোর্ড
 //  (ঢুকেই যা দেখা যায়) আগের মতোই মূল বান্ডেলে থাকে।
 // ---------------------------------------------------------------------------
+// লোকাল ডাটা মুডের সতর্ক-ফিতা: ভুল করে কেউ যেন না ভাবে লাইভে কাজ করছে।
+// প্রোডাকশন বিল্ডে isLocalDataMode সবসময় false — ফিতা কখনো দেখা যায় না।
+function LocalModeRibbon() {
+  if (!isLocalDataMode) return null;
+  return (
+    <div className="local-mode-ribbon no-print">
+      🧪 লোকাল ডাটা মুড — ব্যাকআপ থেকে চলছে, লাইভ ডাটাবেজে কিছুই লেখা হচ্ছে না।
+      অ্যাডমিন লগইন: যেকোনো ইমেইল ও পাসওয়ার্ড। নতুন করে শুরু: ঠিকানায় ?resetlocal=1
+    </div>
+  );
+}
+
 const lazyView = (loader, name) => lazy(() => loader().then((m) => ({ default: m[name] })));
 const LedgerEntryView = lazyView(() => import('./views/LedgerEntryView'), 'LedgerEntryView');
 const MonthlyCollectionView = lazyView(() => import('./views/MonthlyCollectionView'), 'MonthlyCollectionView');
@@ -120,6 +133,7 @@ export function App() {
   if (!isAuthenticated) {
     return (
       <>
+        <LocalModeRibbon />
         <LoginView />
         <ToastContainer />
       </>
@@ -135,6 +149,7 @@ export function App() {
 
   return (
     <div className="app-container">
+      <LocalModeRibbon />
       <Sidebar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}

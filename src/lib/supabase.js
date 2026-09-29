@@ -1,4 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
+import { createLocalClient } from './localClient';
+
+// npm run dev:local (vite --mode backup) — তখন আসল ডাটাবেজের বদলে
+// ব্যাকআপ-চালিত নকল ক্লায়েন্ট বসে; লাইভে কিছুই লেখা বা পড়া হয় না।
+// import.meta.env.DEV দ্বিতীয় তালা: vite build সবসময় DEV=false দেয়,
+// তাই ভুল করে "vite build --mode backup" চালালেও প্রোডাকশন বিল্ডে
+// লোকাল-মোড ঢোকা অসম্ভব — ডেপ্লয় হওয়া সাইট সবসময় আসল ডাটাবেজে চলে।
+export const isLocalDataMode = import.meta.env.DEV && import.meta.env.MODE === 'backup';
 
 // হোস্টিংয়ে (Vercel/Netlify) Environment Variable বসানো না থাকলেও অ্যাপ যেন
 // চলে — তাই সংযোগের তথ্য এখানে ডিফল্ট হিসেবে রাখা হলো।
@@ -37,16 +45,14 @@ if (!url || !anonKey) {
 // hasSupabaseConfig গার্ডগুলো কখনো চলার সুযোগই পায় না। তাই .env না থাকলে
 // একটি নিরীহ প্লেসহোল্ডার দেওয়া হয়; এতে অ্যাপ চালু হয় এবং DataContext
 // ব্যবহারকারীকে ".env পাওয়া যায়নি" বার্তাটি পরিষ্কারভাবে দেখাতে পারে।
-export const supabase = createClient(
-  url || 'https://placeholder.invalid',
-  anonKey || 'placeholder-anon-key',
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true
-    }
-  }
-);
+export const supabase = isLocalDataMode
+  ? createLocalClient()
+  : createClient(url || 'https://placeholder.invalid', anonKey || 'placeholder-anon-key', {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true
+      }
+    });
 
 export const hasSupabaseConfig = Boolean(url && anonKey);
 

@@ -70,10 +70,31 @@ function nkfmsDataApi() {
     res.end();
   };
 
+  // লোকাল ডাটা মুড (npm run dev:local): backups/ ফোল্ডারের সবচেয়ে নতুন
+  // ব্যাকআপটি /__local-data__ পথে পরিবেশন করা হয় — src/lib/localClient.js
+  // সেখান থেকেই পড়ে। প্রোডাকশন বিল্ডে এই পথের অস্তিত্বই নেই।
+  const handleLocalData = (req, res, next) => {
+    if ((req.url || '').split('?')[0] !== '/__local-data__') return next();
+    try {
+      const bakRoot = path.resolve(__dirname, 'backups');
+      const day = fs.readdirSync(bakRoot).filter((d) => /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(d)).sort().pop();
+      if (!day) throw new Error('backups/ ফোল্ডারে কোনো ব্যাকআপ নেই');
+      const text = fs.readFileSync(path.join(bakRoot, day, 'full-backup.json'), 'utf8');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Backup-Day', day);
+      res.end(text);
+    } catch (e) {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: String(e.message || e) }));
+    }
+  };
+
   return {
     name: 'nkfms-data-api',
     configureServer(server) {
       server.middlewares.use(handle);
+      server.middlewares.use(handleLocalData);
     },
     configurePreviewServer(server) {
       server.middlewares.use(handle);

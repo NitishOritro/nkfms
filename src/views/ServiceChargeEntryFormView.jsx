@@ -28,7 +28,9 @@ export function ServiceChargeEntryFormView() {
   const [serviceCharge, setServiceCharge] = useState('');
   const [collectorId, setCollectorId] = useState('');
   const [error, setError] = useState('');
-  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+  // আগের এন্ট্রি থাকলে কী করা হবে: 'add' = আগের জমার সাথে যোগ,
+  // 'replace' = আগেরটি মুছে নতুন অঙ্ক। খালি মানে এখনো বাছা হয়নি।
+  const [overwriteMode, setOverwriteMode] = useState('');
 
   const flats = useMemo(
     () => data.flats.slice().sort((a, b) => (a.serial || 0) - (b.serial || 0)),
@@ -41,10 +43,12 @@ export function ServiceChargeEntryFormView() {
   // মাসের তালিকা — শুরুর মাস থেকে চলতি মাস পর্যন্ত (স্বয়ংক্রিয়ভাবে এগোয়)
   const months = useMemo(() => Calc.monthOptions(data), [data]);
 
-  // পূর্বের বকেয়া = নির্বাচিত মাসের ঠিক আগের মাস পর্যন্ত হিসাব
+  // বর্তমান বকেয়া = নির্বাচিত মাস পর্যন্ত হিসাব — এ মাসের ধার্য এবং এ
+  // মাসে ইতিমধ্যে দেওয়া জমাও ধরা। আগে এখানে আগের মাস পর্যন্ত দেখানো হতো;
+  // তাতে এ মাসে কিছু জমা পড়ে থাকলে আদায়কারী ভুল অঙ্ক দেখতেন।
   const prevStatus = useMemo(() => {
     if (!selectedFlat || !month) return null;
-    return Calc.flatStatus(data, selectedFlat, U.addMonths(month, -1));
+    return Calc.flatStatus(data, selectedFlat, month);
   }, [data, selectedFlat, month]);
 
   const monthRate = useMemo(
@@ -71,7 +75,7 @@ export function ServiceChargeEntryFormView() {
     setServiceCharge('');
     setCollectorId('');
     setError('');
-    setConfirmOverwrite(false);
+    setOverwriteMode('');
     if (!keepMonth) setMonth(selectedMonth);
   };
 
@@ -93,15 +97,20 @@ export function ServiceChargeEntryFormView() {
     }
     if (!collectorId) { setError('সার্ভিস চার্জ আদায়কারী নির্বাচন করুন।'); return; }
 
-    // আগের এন্ট্রি থাকলে না জানিয়ে বদলে দেওয়া হয় না
-    if (existing && !confirmOverwrite) {
-      setError('এই মাসে আগে থেকেই একটি এন্ট্রি আছে। নিচের ঘরে টিক দিয়ে নিশ্চিত করুন।');
+    // আগের এন্ট্রি থাকলে না জানিয়ে কিছু করা হয় না — যোগ না বদল, বেছে নিতে হয়
+    if (existing && !overwriteMode) {
+      setError('এই মাসে আগে থেকেই একটি এন্ট্রি আছে। নিচে বেছে নিন — আগের জমার সাথে যোগ হবে, নাকি বদলে যাবে।');
       return;
     }
 
-    setPayment(flatId, month, { amount, collectorId });
+    const finalAmount = existing && overwriteMode === 'add'
+      ? Number(existing.amount) + amount
+      : amount;
+    setPayment(flatId, month, { amount: finalAmount, collectorId });
     addToast(
-      `${selectedFlat.flatNo} — ${U.monthLabel(month)} মাসে ${U.bnTaka(amount)} সংরক্ষিত হয়েছে।`,
+      existing && overwriteMode === 'add'
+        ? `${selectedFlat.flatNo} — আগের ${U.bnTaka(existing.amount)}-এর সাথে ${U.bnTaka(amount)} যোগ হয়ে ${U.monthLabel(month)} মাসে মোট ${U.bnTaka(finalAmount)} সংরক্ষিত হয়েছে।`
+        : `${selectedFlat.flatNo} — ${U.monthLabel(month)} মাসে ${U.bnTaka(amount)} সংরক্ষিত হয়েছে।`,
       'success'
     );
     resetForm(true); // পরের এন্ট্রির জন্য মাসটি রেখে দেওয়া হয়
@@ -117,7 +126,7 @@ export function ServiceChargeEntryFormView() {
               <span>সার্ভিস চার্জ এন্ট্রি ফর্ম</span>
             </div>
             <div className="card-subtitle">
-              ফ্ল্যাট মালিক নির্বাচন করলে ফ্ল্যাট নম্বর ও পূর্বের বকেয়া নিজে থেকেই বসে যাবে।
+              ফ্ল্যাট মালিক নির্বাচন করলে ফ্ল্যাট নম্বর ও বর্তমান বকেয়া নিজে থেকেই বসে যাবে।
             </div>
           </div>
           <button type="button" onClick={() => resetForm(false)} className="btn btn-outline btn-sm">
@@ -195,9 +204,9 @@ export function ServiceChargeEntryFormView() {
               </span>
             </div>
 
-            {/* ---- ৪. পূর্বের বকেয়া (স্বয়ংক্রিয়) ---- */}
+            {/* ---- ৪. বর্তমান বকেয়া (স্বয়ংক্রিয়) ---- */}
             <div className="charge-field">
-              <label className="charge-field-label" htmlFor="scf-due">পূর্বের বকেয়া</label>
+              <label className="charge-field-label" htmlFor="scf-due">বর্তমান বকেয়া</label>
               <input
                 id="scf-due"
                 type="text"
@@ -211,7 +220,7 @@ export function ServiceChargeEntryFormView() {
               />
               <span className="charge-field-hint">
                 <Lock size={12} />{' '}
-                {month ? `${U.monthLabel(U.addMonths(month, -1))} পর্যন্ত` : 'স্বয়ংক্রিয়'}
+                {month ? `${U.monthLabel(month)} পর্যন্ত, এ মাসের জমাসহ হিসাব` : 'স্বয়ংক্রিয়'}
               </span>
             </div>
 
@@ -223,7 +232,7 @@ export function ServiceChargeEntryFormView() {
                 type="number"
                 inputMode="numeric"
                 min="0"
-                step="100"
+                step="1"
                 className="form-input"
                 value={serviceCharge}
                 onChange={(e) => { setServiceCharge(e.target.value); setError(''); }}
@@ -293,7 +302,7 @@ export function ServiceChargeEntryFormView() {
                 <Info size={14} /> মনে রাখবেন
               </div>
               <ul>
-                <li>মালিক নির্বাচন করলে ফ্ল্যাট নম্বর ও পূর্বের বকেয়া নিজে থেকেই বসে।</li>
+                <li>মালিক নির্বাচন করলে ফ্ল্যাট নম্বর ও বর্তমান বকেয়া নিজে থেকেই বসে।</li>
                 <li>জমার তারিখ ধরা হয় নির্বাচিত মাসের শেষ দিন।</li>
                 <li>একই মাসে আগে এন্ট্রি থাকলে সংরক্ষণের আগে সতর্ক করা হবে।</li>
               </ul>
@@ -309,16 +318,31 @@ export function ServiceChargeEntryFormView() {
                   <b>{selectedFlat.flatNo}</b> ফ্ল্যাটের <b>{U.monthLabel(month)}</b> মাসে
                   ইতিমধ্যে <b>{U.bnTaka(existing.amount)}</b> জমা আছে
                   {existing.collectorId ? ` (আদায়কারী: ${collectorName(existing.collectorId)})` : ''}।
-                  সংরক্ষণ করলে আগের অঙ্কটি এই নতুন অঙ্ক দিয়ে বদলে যাবে।
+                  নতুন অঙ্কটি কীভাবে ধরা হবে, বেছে নিন:
                 </div>
                 <label className="form-confirm">
                   <input
-                    type="checkbox"
-                    checked={confirmOverwrite}
-                    onChange={(e) => { setConfirmOverwrite(e.target.checked); setError(''); }}
+                    type="radio"
+                    name="scf-overwrite"
+                    checked={overwriteMode === 'add'}
+                    onChange={() => { setOverwriteMode('add'); setError(''); }}
                     disabled={!canWrite}
                   />
-                  <span>হ্যাঁ, আগের এন্ট্রিটি বদলে দিন</span>
+                  <span>
+                    আগের জমার সাথে <b>যোগ</b> হবে
+                    {Number(serviceCharge) > 0 &&
+                      ` (মোট হবে ${U.bnTaka(Number(existing.amount) + Number(serviceCharge))})`}
+                  </span>
+                </label>
+                <label className="form-confirm">
+                  <input
+                    type="radio"
+                    name="scf-overwrite"
+                    checked={overwriteMode === 'replace'}
+                    onChange={() => { setOverwriteMode('replace'); setError(''); }}
+                    disabled={!canWrite}
+                  />
+                  <span>আগের এন্ট্রি মুছে শুধু নতুন অঙ্কটি থাকবে</span>
                 </label>
               </div>
             </div>
@@ -349,7 +373,7 @@ export function ServiceChargeEntryFormView() {
               </div>
               <div className="s-item">
                 <span className="s-label">
-                  {prevStatus.advance > 0 ? 'পূর্বের অগ্রীম' : 'পূর্বের বকেয়া'}
+                  {prevStatus.advance > 0 ? 'বর্তমান অগ্রীম' : 'বর্তমান বকেয়া'}
                 </span>
                 <span
                   className="s-value"

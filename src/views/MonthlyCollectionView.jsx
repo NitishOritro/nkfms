@@ -17,6 +17,15 @@ export function MonthlyCollectionView() {
   const flats = [...data.flats].sort((a, b) => (a.serial || 0) - (b.serial || 0));
   const { rows, totals } = Calc.summary(data, selectedMonth);
 
+  // "আগের মাস পর্যন্ত বকেয়া" — এ মাসের ধার্য বা জমা কোনোটাই এতে নেই।
+  // আগে এখানে দুটি কলাম ছিল (পূর্বের/নতুন বকেয়া); হিসাবটি বিভ্রান্তিকর
+  // ছিল — জমা বসালে "নতুন বকেয়া" পূর্বেরটির চেয়ে বেড়ে যেত (জমা দুবার
+  // বিয়োগ হতো)। এখন একটিই কলাম: গত মাস শেষে কত পাওনা ছিল।
+  const prevMonth = U.addMonths(selectedMonth, -1);
+  const prevDueByFlat = new Map(
+    Calc.summary(data, prevMonth).rows.map((r) => [r.flat.id, r.due])
+  );
+
   const paginatedRows = pageSize === 'all' ? rows : rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handleInputChange = (flatId, field, value) => {
@@ -128,11 +137,11 @@ export function MonthlyCollectionView() {
                   <th style={{ width: '46px', textAlign: 'center' }}>ক্রম</th>
                   <th style={{ width: '70px' }}>ফ্ল্যাট</th>
                   <th style={{ minWidth: '160px' }}>মালিকের নাম</th>
-                  <th style={{ width: '110px', textAlign: 'right' }}>পূর্বের বকেয়া</th>
-                  <th style={{ width: '130px' }}>এ মাসে জমা</th>
+                  <th style={{ width: '130px', textAlign: 'right' }}>{U.monthLabel(prevMonth)}<br />পর্যন্ত বকেয়া</th>
+                  <th style={{ width: '130px' }}>{U.monthLabel(selectedMonth)}<br />মাসে জমা</th>
+                  <th style={{ width: '120px', textAlign: 'right' }}>বর্তমান বকেয়া<br />({U.monthLabel(selectedMonth).replace(' ', '-')})</th>
                   <th style={{ width: '170px' }}>আদায়কারী</th>
                   <th style={{ width: '150px' }}>জমার তারিখ</th>
-                  <th style={{ width: '110px', textAlign: 'right' }}>নতুন বকেয়া</th>
                   <th style={{ width: '230px', textAlign: 'center' }}>কার্যক্রম</th>
                 </tr>
               </thead>
@@ -141,7 +150,7 @@ export function MonthlyCollectionView() {
                   const flat = r.flat;
                   const payment = data.payments.find((p) => p.flatId === flat.id && p.month === selectedMonth);
                   const isPaid = payment && Number(payment.amount) > 0;
-                  const prevDue = r.balance - (payment ? Number(payment.amount) : 0);
+                  const prevDue = prevDueByFlat.get(flat.id) || 0;
 
                   return (
                     <tr key={flat.id} className={isPaid ? 'paid-row' : ''}>
@@ -163,6 +172,9 @@ export function MonthlyCollectionView() {
                           placeholder={isReadOnly ? '—' : U.bnNumber(r.monthRate)}
                           onChange={(e) => handleInputChange(flat.id, 'amount', e.target.value)}
                         />
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: r.due > 0 ? 'var(--danger)' : 'var(--success)' }}>
+                        {r.due > 0 ? U.bnNumber(r.due) : '০'}
                       </td>
                       <td>
                         <select
@@ -189,9 +201,6 @@ export function MonthlyCollectionView() {
                           value={payment ? payment.receivedOn : ''}
                           onChange={(e) => handleInputChange(flat.id, 'receivedOn', e.target.value)}
                         />
-                      </td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: r.due > 0 ? 'var(--danger)' : 'var(--success)' }}>
-                        {r.due > 0 ? U.bnNumber(r.due) : '০'}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', flexWrap: 'nowrap' }}>
@@ -233,13 +242,15 @@ export function MonthlyCollectionView() {
               </tbody>
               <tfoot>
                 <tr style={{ background: '#f8fafc', fontWeight: 700 }}>
+                  {/* ঘরগুলো উপরের ৯টি কলামের সাথে মিলিয়ে: ৪ (লেবেল) + জমা +
+                      বর্তমান বকেয়া + ২ (গণনা) + কার্যক্রম                    */}
                   <td colSpan="4" style={{ textAlign: 'right' }}>এ মাসে সর্বমোট আদায়:</td>
                   <td style={{ color: 'var(--primary)', fontSize: '13.5px' }}>{U.bnTaka(totals.monthCollected)}</td>
-                  <td colSpan="2" style={{ color: '#64748b' }}>
-                    {U.bnDigits(totals.paidThisMonth)} টি ফ্ল্যাট পরিশোধ করেছে
-                  </td>
                   <td style={{ textAlign: 'right', color: 'var(--danger)', fontSize: '13.5px' }}>
                     {U.bnTaka(totals.totalDue)}
+                  </td>
+                  <td colSpan="2" style={{ color: '#64748b' }}>
+                    {U.bnDigits(totals.paidThisMonth)} টি ফ্ল্যাট পরিশোধ করেছে
                   </td>
                   <td></td>
                 </tr>

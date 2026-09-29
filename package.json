@@ -5,6 +5,7 @@
   "description": "নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি — সার্ভিস চার্জ ব্যবস্থাপনা ওয়েব অ্যাপ্লিকেশন",
   "scripts": {
     "dev": "vite",
+    "dev:local": "vite --mode backup",
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "vite build && firebase deploy --only hosting"
