@@ -2230,7 +2230,7 @@ table.data-table tr:focus-within select {
 .print-head .head-logo .logo-label {
   width: 56px;
   text-align: center;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.5px;
   margin-top: 2px;
@@ -2245,7 +2245,7 @@ table.data-table tr:focus-within select {
 /* সমিতির নাম আকাশি নীল। #0284c7 বেছেছি — উজ্জ্বল আকাশি (#38bdf8)
    সাদা কাগজে ফ্যাকাশে হয়ে পড়ে, ছাপার পর প্রায় দেখাই যায় না।     */
 .print-head .society {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.2px;
   line-height: 1.3;
@@ -2260,9 +2260,9 @@ table.data-table tr:focus-within select {
   font-weight: 700;
 }
 /* কমিটির নাম — লোগোর ইটরঙা লাল (#e82828), ছোট হরফে পড়ার সুবিধায় সামান্য গাঢ় */
-.print-head .committee { font-size: 11.5px; font-weight: 600; margin-top: 1px; color: #d32626; }
+.print-head .committee { font-size: 13px; font-weight: 600; margin-top: 1px; color: #d32626; }
 .print-head .title {
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 700;
   margin-top: 3px;
   text-decoration: underline;
@@ -2273,7 +2273,7 @@ table.data-table tr:focus-within select {
   width: 165px;
   flex-shrink: 0;
   text-align: right;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 600;
   color: #1e293b;
 }
@@ -2292,8 +2292,8 @@ table.print-table {
 table.print-table th,
 table.print-table td {
   border: 1px solid #b6c2d1;
-  padding: 2.5px 6px;
-  font-size: 11px;
+  padding: 3px 6px;
+  font-size: 13px;
   line-height: 1.35;
   background: transparent;
   /* সব অঙ্ক সমান চওড়া — ডান-সারিবদ্ধ কলামে হাজার-শত ঠিক নিচে নিচে বসে */
@@ -2304,7 +2304,7 @@ table.print-table th {
   border: 1px solid #0f172a;
   background: rgba(238, 241, 246, 0.92);
   font-weight: 700;
-  font-size: 10.5px;
+  font-size: 12.5px;
   line-height: 1.3;
   text-align: center;
   vertical-align: middle;
@@ -2469,6 +2469,8 @@ table.print-table tfoot td {
 .report-scroll {
   width: 100%;
   min-width: 0;
+  /* ল্যান্ডস্কেপ শিট সরু পর্দায় উপচালে কাটা না পড়ে পাশে সরানো যাবে */
+  overflow-x: auto;
 }
 
 @media screen and (max-width: 900px) {
@@ -2512,7 +2514,7 @@ table.print-table tfoot td {
   gap: 7px;
   margin-top: 8px;
   padding: 5px 9px;
-  font-size: 11px;
+  font-size: 12.5px;
   line-height: 1.5;
   color: #334155;
   background: #fef6f6;
@@ -2541,7 +2543,7 @@ table.print-table tfoot td {
   min-width: 180px;
   border: 1px solid #0f172a;
   padding: 5px 9px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
   color: #334155;
   background: rgba(255, 255, 255, 0.72);
@@ -2549,7 +2551,7 @@ table.print-table tfoot td {
 
 .print-totals .box b {
   display: block;
-  font-size: 13px;
+  font-size: 14.5px;
   margin-top: 1px;
   color: #0f172a;
   font-variant-numeric: tabular-nums;
@@ -2569,7 +2571,7 @@ table.print-table tfoot td {
   text-align: center;
   /* ৫ জনের ঘর পাশাপাশি বসায় প্রতিটির প্রস্থ কম। হরফ ছোট রাখলে
      নাম-পদবি-কমিটির তিনটি লাইন খোলামেলা থাকে, চাপাচাপি লাগে না।  */
-  font-size: 9.5px;
+  font-size: 10.5px;
   line-height: 1.35;
 }
 
@@ -2580,15 +2582,15 @@ table.print-table tfoot td {
   padding-top: 3px;
 }
 
-.print-signs .s .sd { font-size: 8.5px; }
-.print-signs .s .nm { font-weight: 700; font-size: 10.5px; }
-.print-signs .s .dg { color: #475569; font-size: 7.5px; line-height: 1.25; }
+.print-signs .s .sd { font-size: 9.5px; }
+.print-signs .s .nm { font-weight: 700; font-size: 12px; }
+.print-signs .s .dg { color: #475569; font-size: 8.5px; line-height: 1.25; }
 
 .print-foot {
   margin-top: 14px;
   padding-top: 5px;
   border-top: 1px solid #cbd5e1;
-  font-size: 9.5px;
+  font-size: 10.5px;
   text-align: center;
   color: #64748b;
 }
@@ -2889,11 +2891,24 @@ table.print-table tfoot td {
    একই পাতায় পাশাপাশি দুটি খতিয়ান, তাই ঘরগুলো একটু ছোট।
    ========================================================================== */
 
+/* আয়-ব্যয়ের প্রিভিউ — ছাপার মতোই আড়াআড়ি অনুপাতে চওড়া */
+.print-sheet.is-legal {
+  width: 816px; /* Legal-এর প্রস্থ (৮.৫") — A4-এর চেয়ে সামান্য চওড়া */
+  max-width: none;
+}
+
 table.cashbook-table th,
 table.cashbook-table td {
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.4;
   vertical-align: middle;
+}
+
+/* সারি ২৬-এর বেশি হলে ছোট মাপ — ছাপার is-dense নিয়মের পর্দা-সংস্করণ */
+table.cashbook-table.is-dense th,
+table.cashbook-table.is-dense td {
+  font-size: 10px;
+  padding: 2.5px 5px;
 }
 
 /* আদায় ও খরচের মাঝের ভাগরেখাটি মোটা — কোথায় এক খতিয়ান শেষ, স্পষ্ট থাকে */
@@ -2904,7 +2919,7 @@ table.cashbook-table td:nth-child(4) {
 
 table.cashbook-table tfoot td {
   font-weight: 700;
-  font-size: 11px;
+  font-size: 13.5px;
 }
 
 /* অসম্পূর্ণ মাসের হিসাব — ছাপার পাতাতেও যেন সতর্কতা থেকে যায় */
@@ -3034,7 +3049,7 @@ table.cashbook-table tfoot td {
 table.cashbook-table tfoot tr.cashbook-note td {
   background: #fff7ed;
   color: #7c2d12;
-  font-size: 9.5px;
+  font-size: 12px;
   font-weight: 400;
   line-height: 1.55;
   text-align: left;
@@ -3215,3 +3230,21 @@ table.cashbook-table tfoot tr.cashbook-note td {
   border-top: 2px solid #f97316;
 }
 @media print { .local-mode-ribbon { display: none !important; } }
+
+
+/* ফোনে এন্ট্রি ফর্মের নিচের অংশ — নোট উপরে, বোতাম দুটি পুরো চওড়া */
+@media screen and (max-width: 640px) {
+  .charge-form-card .modal-footer {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .charge-form-card .modal-footer .charge-form-foot-note {
+    flex: 1 1 100%;
+    text-align: center;
+  }
+  .charge-form-card .modal-footer .btn {
+    flex: 1 1 0;
+    justify-content: center;
+    padding: 12px 10px; /* আঙুলে চাপার মতো বড় */
+  }
+}

@@ -81,6 +81,9 @@
     min-height: 270mm !important;
     width: 100% !important;
     background: transparent !important;
+    /* ইনলাইন overflow:hidden (পর্দায় জলছাপ ক্লিপের জন্য) ছাপায় থাকলে
+       এক পাতার বেশি কনটেন্ট নিঃশব্দে হারিয়ে যায় — তাই কাগজে খোলা */
+    overflow: visible !important;
   }
 
   .watermark-container {
@@ -137,7 +140,7 @@
   .print-head .head-logo .logo-label {
     width: 52px !important;
     text-align: center !important;
-    font-size: 9px !important;
+    font-size: 10px !important;
     font-weight: 700 !important;
     letter-spacing: 0.5px !important;
     margin-top: 1px !important;
@@ -152,13 +155,13 @@
   .print-head .head-date {
     width: 145px !important;
     text-align: right !important;
-    font-size: 10.5px !important;
+    font-size: 11.5px !important;
     font-weight: 600 !important;
     flex-shrink: 0 !important;
   }
 
   .print-head .society {
-    font-size: 15px !important;
+    font-size: 17px !important;
     line-height: 1.3 !important;
     font-weight: 700 !important;
     letter-spacing: .2px !important;
@@ -175,7 +178,7 @@
   }
 
   .print-head .committee {
-    font-size: 11.5px !important;
+    font-size: 13px !important;
     font-weight: 600 !important;
     margin-top: 1px !important;
     /* লোগোর লালের সাথে মেলানো — রঙিন ছাপাতেও যেন রংটি বসে */
@@ -185,7 +188,7 @@
   }
 
   .print-head .title {
-    font-size: 11.5px !important;
+    font-size: 13px !important;
     font-weight: 700 !important;
     margin-top: 3px !important;
     text-decoration: underline !important;
@@ -206,8 +209,8 @@
 
   table.print-table th, table.print-table td {
     border: 1px solid #a3adba !important;
-    padding: 2.5px 6px !important;
-    font-size: 11px !important;
+    padding: 3px 6px !important;
+    font-size: 13px !important;
     line-height: 1.35 !important;
     background: transparent !important;
     font-variant-numeric: tabular-nums !important;
@@ -217,7 +220,7 @@
     border: 1px solid #000 !important;
     background: rgba(238, 241, 246, 0.85) !important;
     font-weight: 700 !important;
-    font-size: 10.5px !important;
+    font-size: 12.5px !important;
     line-height: 1.3 !important;
     text-align: center !important;
   }
@@ -346,7 +349,7 @@
      কাগজে সাধারণত সাদাকালো ছাপা হয়, তাই হলুদ ভরাটের বদলে পাতলা বর্ডার
      ও ছোট হরফ — লেখাটি পড়া যায়, অথচ সারির জায়গা বেশি নেয় না।       */
   .resident-badge.is-compact {
-    font-size: 7.5px !important;
+    font-size: 8.5px !important;
     padding: 0 2px !important;
     margin-left: 3px !important;
   }
@@ -357,7 +360,7 @@
     color: #000 !important;
     border: 1px solid #000 !important;
     border-radius: 3px !important;
-    font-size: 9px !important;
+    font-size: 10px !important;
     font-weight: 700 !important;
     padding: 0 3px !important;
     margin-left: 4px !important;
@@ -379,7 +382,7 @@
     gap: 6px !important;
     margin-top: 6px !important;
     padding: 3px 7px !important;
-    font-size: 10px !important;
+    font-size: 11.5px !important;
     line-height: 1.45 !important;
     color: #000 !important;
     background: #fdf2f2 !important;
@@ -416,14 +419,14 @@
     flex: 1 !important;
     border: 1px solid #000 !important;
     padding: 4px 7px !important;
-    font-size: 10.5px !important;
+    font-size: 12px !important;
     line-height: 1.4 !important;
     background: rgba(255, 255, 255, 0.7) !important;
   }
 
   .print-totals .box b {
     display: block !important;
-    font-size: 12.5px !important;
+    font-size: 14.5px !important;
     margin-top: 1px !important;
     font-variant-numeric: tabular-nums !important;
   }
@@ -444,21 +447,21 @@
     flex: 1 1 0 !important;
     min-width: 0 !important;
     text-align: center !important;
-    font-size: 9.5px !important;
+    font-size: 10.5px !important;
     line-height: 1.35 !important;
   }
 
   .print-signs .s .nm {
-    font-size: 10.5px !important;
+    font-size: 12px !important;
   }
 
   .print-signs .s .sd {
-    font-size: 8.5px !important;
+    font-size: 9.5px !important;
   }
 
   /* পদবি ও কমিটির নাম — সরু ঘরে যেন দুই লাইনে না ভাঙে */
   .print-signs .s .dg {
-    font-size: 7.5px !important;
+    font-size: 8.5px !important;
     line-height: 1.25 !important;
   }
 
@@ -473,7 +476,7 @@
     margin-top: 12px !important;
     padding-top: 4px !important;
     border-top: 1px solid #bbb !important;
-    font-size: 9px !important;
+    font-size: 10.5px !important;
     text-align: center !important;
     color: #444 !important;
   }
@@ -512,11 +515,24 @@
 
 @media print {
   /* আয়-ব্যয় হিসাবায়ন — এক পাতায় দুটি খতিয়ান ধরাতে ঘরগুলো আরও ছোট */
+  /* Legal (৮.৫×১৪") লম্বা পাতা — উচ্চতা পাতার মাপে, প্রস্থ এমনিই ১০০% */
+  .print-sheet.is-legal {
+    min-height: 320mm !important;
+  }
+
   table.cashbook-table th,
   table.cashbook-table td {
-    font-size: 10px !important;
+    font-size: 13px !important;
     line-height: 1.35 !important;
     padding: 2px 5px !important;
+  }
+
+  /* সারি ৪০-এর বেশি (ReportView যোগ করে is-dense) — ছোট মাপ,
+     ৩৫+ সারির মাসও এক পাতায় ধরে                                   */
+  table.cashbook-table.is-dense th,
+  table.cashbook-table.is-dense td {
+    font-size: 10px !important;
+    padding: 2.5px 5px !important;
   }
 
   table.cashbook-table th:nth-child(4),
@@ -524,8 +540,9 @@
     border-left-width: 2px !important;
   }
 
-  /* সবুজ, লাল ও হলুদ ব্যান্ড কাগজেও যেন থাকে */
+  /* সবুজ, লাল ও হলুদ ব্যান্ড কাগজেও যেন থাকে; যোগফল মূল ঘরের চেয়ে বড় */
   table.cashbook-table tfoot td {
+    font-size: 13.5px !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -534,7 +551,7 @@
 @media print {
   /* অসম্পূর্ণ হিসাবের সতর্কতা কাগজেও থাকবে — নইলে ভুল হিসাব ছাপা হয়ে যাবে */
   .cashbook-warning {
-    font-size: 10px !important;
+    font-size: 11.5px !important;
     padding: 6px 10px !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -556,7 +573,7 @@
   table.cashbook-table tfoot tr.cashbook-note td {
     background: #fff7ed !important;
     color: #7c2d12 !important;
-    font-size: 9px !important;
+    font-size: 12px !important;
     font-weight: 400 !important;
     line-height: 1.45 !important;
     -webkit-print-color-adjust: exact !important;

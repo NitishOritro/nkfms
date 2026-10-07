@@ -137,6 +137,9 @@ export function ReportView({
   const cashRunning = selectedMonth === U.currentMonth();
   const cashIn = cashbookCells(cash.income);
   const cashOut = cashbookCells(cash.expense);
+  // Legal পাতায় ১৩px হরফে ~৩৭ সারি পর্যন্ত ধরে। ৩৬-এর বেশি হলে
+  // আপনা-আপনি ছোট মাপে নেমে আসে, যাতে ছাপা সবসময় এক পাতায় থাকে।
+  const cashRowCount = Math.max(cashIn.length, cashOut.length);
 
   const getCollectorName = (colId) => {
     const c = (s.collectors || []).find((x) => x.id === colId);
@@ -181,18 +184,28 @@ export function ReportView({
   // হয় — লেখা ছোট হলেও টেবিলের গড়ন ও কোন তথ্য কোথায় তা এক নজরে বোঝা
   // যায়। ছাপায় এর কোনো প্রভাব নেই (print.css এ zoom: 1 !important)।
   const scrollRef = useRef(null);
-  const [fitSheet, setFitSheet] = useState(false);
+  // ফোনে পাতাটি প্রথমে এক নজরে (ছোট করে পুরোটা) দেখানো হয় — খুলেই
+  // A4-র এক কোণা দেখলে নতুন ব্যবহারকারী দিশা পান না। "আসল মাপ" চাপলে
+  // পড়ার মাপে গিয়ে পাশে সরিয়ে দেখা যায়। ডেস্কটপে আগের মতোই পুরো মাপ।
+  const [fitSheet, setFitSheet] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth <= 900
+  );
   const [fitZoom, setFitZoom] = useState(0.46);
   useEffect(() => {
     if (!fitSheet) return;
     const measure = () => {
       const el = scrollRef.current;
-      if (el && el.clientWidth) setFitZoom(Math.min(1, el.clientWidth / 794));
+      if (!el || !el.clientWidth) return;
+      // শিটের প্রকৃত প্রস্থ — আয়-ব্যয় আড়াআড়ি (১১২৩px), বাকিগুলো ৭৯৪px
+      const sheet = el.querySelector('.print-sheet');
+      const sheetW = (sheet && sheet.offsetWidth) || 794;
+      setFitZoom(Math.min(1, el.clientWidth / sheetW));
     };
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [fitSheet]);
+    // reportType বদলালে শিটের প্রস্থও বদলায় (আয়-ব্যয় আড়াআড়ি) — তাই নতুন করে মাপা
+  }, [fitSheet, reportType]);
 
   const ledgerFlat = data.flats.find((f) => f.id === selectedLedgerFlatId) || data.flats[0];
   const ledgerRows = ledgerFlat ? Calc.ledger(data, ledgerFlat, ledgerMonth) : [];
@@ -309,6 +322,11 @@ export function ReportView({
 
       {/* ফোনে শিটটি পাশে সরিয়ে দেখার ঘর। ডেস্কটপে এটি নিছক একটি
           মোড়ক — কোনো প্রভাব ফেলে না।                              */}
+      {/* আয়-ব্যয়ের সারি অনেক — Legal (৮.৫×১৪") লম্বা পাতায় A4-এর চেয়ে
+          ২ ইঞ্চি বেশি উচ্চতা, তাই ব্যস্ত মাসও বড় হরফে এক পাতায় ধরে। এই
+          স্টাইলটি কেবল আয়-ব্যয় ট্যাব খোলা থাকলেই থাকে — অন্য রিপোর্ট
+          আগের মতোই A4-এ ছাপা হয়।                                      */}
+      {reportType === 'cashbook' && <style>{'@page { size: legal; }'}</style>}
       <div
         className={fitSheet ? 'report-scroll is-fit' : 'report-scroll'}
         ref={scrollRef}
@@ -316,7 +334,7 @@ export function ReportView({
       >
       {/* Printable Sheet Container */}
       <div
-        className="card print-sheet"
+        className={`card print-sheet${reportType === 'cashbook' ? ' is-legal' : ''}`}
         style={{
           background: '#ffffff',
           boxShadow: 'var(--shadow-lg)',
@@ -455,7 +473,7 @@ export function ReportView({
         {/* REPORT 4: আয়-ব্যয় হিসাবায়ন — কাগজের মতো পাশাপাশি দুটি খতিয়ান */}
         {reportType === 'cashbook' && (
           <>
-            <table className="print-table cashbook-table">
+            <table className={`print-table cashbook-table${cashRowCount > 36 ? ' is-dense' : ''}`}>
               <thead>
                 <tr>
                   <th style={{ width: '6%' }}>ক্রমিক<br />নং</th>
