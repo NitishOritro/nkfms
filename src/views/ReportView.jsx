@@ -677,11 +677,18 @@ export function ReportView({
                       লাইনে নেমে সারিটি ৪৩px থেকে ৭০px হয়ে যেত।
                       মোবাইলের ঘরে ১১ অঙ্কের নম্বরই যথেষ্ট, বাড়তি
                       জায়গাটুকু নামের কলামে দেওয়া হলো।              */}
-                  <th style={{ width: '25%', textAlign: 'left' }}>মালিকের নাম</th>
+                  <th style={{ width: '23%', textAlign: 'left' }}>মালিকের নাম</th>
                   <th style={{ width: '7%' }}>মোবাইল</th>
                   <th className="th-charge" style={{ width: '11%', textAlign: 'right' }}>ধার্যকৃত<br />চার্জ</th>
                   <th className="th-paid" style={{ width: '11%', textAlign: 'right' }}>মোট<br />জমা</th>
-                  <th className="th-due" style={{ width: '11%', textAlign: 'right' }}>বর্তমান<br />বকেয়া</th>
+                  {/* মাসের লাইনটি এক লাইনে রাখতে nowrap — ভাঙলে হেডার তিন
+                      লাইনে গড়িয়ে সারিটা অকারণে উঁচু হয়ে যায় */}
+                  <th className="th-due" style={{ width: '15%', textAlign: 'right' }}>
+                    বর্তমান বকেয়া<br />
+                    <span style={{ whiteSpace: 'nowrap' }}>
+                      ({U.monthLabel(duesUpToMonth).replace(' ', '-')} পর্যন্ত)
+                    </span>
+                  </th>
                   <th style={{ width: '11%' }}>সমতুল্য</th>
                 </tr>
               </thead>
