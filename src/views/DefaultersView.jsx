@@ -263,8 +263,11 @@ export function DefaultersView({ onOpenSelectivePrint }) {
                     বকেয়া সমন্বয় হয় — তখন প্রকৃত বকেয়া উপরের যোগফলের কম */}
                 {detailDueSum !== detail.due && (
                   <div className="due-detail-note">
-                    অন্য মাসের বাড়তি জমা সমন্বয়ের পর প্রকৃত মোট বকেয়া:{' '}
-                    <b>{U.bnTaka(detail.due)}</b>
+                    <span className="ic">⚠️</span>
+                    <span>
+                      অন্য মাসের বাড়তি জমা সমন্বয়ের পর প্রকৃত মোট বকেয়া:{' '}
+                      <span className="amt">{U.bnTaka(detail.due)}</span>
+                    </span>
                   </div>
                 )}
               </>
