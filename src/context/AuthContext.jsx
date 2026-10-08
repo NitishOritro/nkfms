@@ -27,6 +27,15 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [viewerMode, setViewerMode] = useState(() => {
     try {
+      // ছাপা রিপোর্টের QR স্ক্যান করে এলে (#/reports?rt=…) লগইন পর্দায় না
+      // আটকে সোজা ভিউ মোডে ঢুকিয়ে দেওয়া হয় — ভিউ মোড এমনিতেই পাসওয়ার্ডহীন,
+      // তাই এতে নিরাপত্তা কমে না। অ্যাডমিন সেশন থাকলে সেটিই প্রাধান্য পায়
+      // (নিচে user হিসাবের সময় session আগে দেখা হয়), কেউ অ্যাডমিন থেকে
+      // নেমে যান না।
+      if (/^#\/?reports\?/.test(window.location.hash || '')) {
+        localStorage.setItem(VIEWER_KEY, '1');
+        return true;
+      }
       return localStorage.getItem(VIEWER_KEY) === '1';
     } catch {
       return false;

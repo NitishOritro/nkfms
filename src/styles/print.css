@@ -580,3 +580,34 @@
     print-color-adjust: exact !important;
   }
 }
+
+@media print {
+  /* রিপোর্ট ফুটার: অনলাইন লিংক + QR — কাগজ থেকে এক স্ক্যানে সফটওয়্যারে */
+  .print-footer-link {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 10px !important;
+    margin-top: 14px !important;
+    padding-top: 7px !important;
+    border-top: 1px solid #94a3b8 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .print-footer-link .qr {
+    width: 16mm !important;
+    height: 16mm !important;
+    display: block !important;
+  }
+  .print-footer-link .t1 {
+    font-size: 10.5px !important;
+    color: #333 !important;
+    line-height: 1.5 !important;
+  }
+  .print-footer-link .t2 {
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    color: #000 !important;
+    letter-spacing: 0.2px !important;
+  }
+}

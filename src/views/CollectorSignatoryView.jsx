@@ -176,7 +176,7 @@ export function CollectorSignatoryView() {
           <div className="card-header">
             <div className="card-title">
               <UserCheck size={18} color="var(--success)" />
-              <span>প্রতিবেদনে স্বাক্ষরকারী কমিটি সদস্যবৃন্দ</span>
+              <span>বর্তমান কমিটি'র সদস্যবৃন্দ</span>
             </div>
           </div>
           <div className="card-body">

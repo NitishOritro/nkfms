@@ -7,6 +7,25 @@ import { Watermark } from '../components/Watermark';
 import { ResidentBadge } from '../components/ResidentBadge';
 import { MonthSelector } from '../components/MonthSelector';
 import { LOGO_BASE64 } from '../assets/logoData';
+import QRCode from 'qrcode';
+
+// ছাপা কাগজ থেকে অনলাইন রিপোর্টে যাওয়ার ঠিকানা — ফুটারের লেখা ও QR, দুটোরই উৎস
+const REPORT_LINK = 'https://nkfms-8c1a6.web.app/#/reports';
+
+// QR-এ রিপোর্টের পরিচয়ও থাকে: #/reports?rt=<ধরন>&rm=<মাস>&rf=<ফ্ল্যাট>।
+// স্ক্যান করলে ভিউ মোডে ঢুকে (AuthContext) ঠিক সেই রিপোর্টটিই খুলে যায়।
+const REPORT_TYPES = ['monthly', 'selective', 'cashbook', 'ledger'];
+function readDeepLink() {
+  const h = typeof window !== 'undefined' ? window.location.hash || '' : '';
+  const qi = h.indexOf('?');
+  if (qi === -1 || !/^#\/?reports$/.test(h.slice(0, qi))) return null;
+  const p = new URLSearchParams(h.slice(qi + 1));
+  return {
+    rt: REPORT_TYPES.includes(p.get('rt')) ? p.get('rt') : null,
+    rm: /^[0-9]{4}-[0-9]{2}$/.test(p.get('rm') || '') ? p.get('rm') : null,
+    rf: p.get('rf') || null
+  };
+}
 
 // জমা পড়েনি বোঝাতে লাল '-'; ছাপার সময়ও রঙটি যেন থেকে যায় (styles/print.css)
 const DASH = <span className="dash">-</span>;
@@ -83,8 +102,20 @@ export function ReportView({
   onAutoPrintDone
 }) {
   const { data, selectedMonth, setSelectedMonth, setMonthLock } = useData();
-  const [reportType, setReportType] = useState(defaultReport);
-  const [selectedLedgerFlatId, setSelectedLedgerFlatId] = useState(data.flats[0]?.id || '');
+
+  // QR ডিপ-লিংক একবারই পড়া হয় (রিফ্রেশে যেন বারবার টেনে না ধরে, নিচের
+  // এফেক্টে প্রয়োগের পর ঠিকানা থেকে প্যারামিটার মুছে ফেলা হয়)
+  const deepLinkRef = useRef(readDeepLink());
+  const deep = deepLinkRef.current;
+
+  const [reportType, setReportType] = useState((deep && deep.rt) || defaultReport);
+  const [selectedLedgerFlatId, setSelectedLedgerFlatId] = useState(
+    (deep && deep.rt === 'ledger' && deep.rf) || data.flats[0]?.id || ''
+  );
+  // বকেয়া বিবরণীর QR-এ বাছাই করা ফ্ল্যাটের তালিকাও থাকে (rf=fA-1,fB-2…)
+  const [deepSelectiveIds] = useState(() =>
+    deep && deep.rt === 'selective' && deep.rf ? deep.rf.split(',') : null
+  );
 
   const s = data.settings;
   const monthShort = U.monthLabelShort(selectedMonth);
@@ -131,6 +162,18 @@ export function ReportView({
     };
   }, [reportType, setSelectedMonth]);
 
+  // QR ডিপ-লিংকের মাস প্রয়োগ — ইচ্ছে করে উপরের আয়-ব্যয় এফেক্টের *পরে*
+  // ঘোষণা করা: মাউন্টে দুটোই চললে শেষ কথা QR-এর মাসেরই থাকে। প্রয়োগ
+  // শেষে ঠিকানা থেকে প্যারামিটার মুছে দেওয়া হয়, যাতে পরে পেজ রিফ্রেশ
+  // করলে বা অন্য রিপোর্টে গেলে পুরনো প্যারামিটার আবার টেনে না ধরে।
+  useEffect(() => {
+    if (!deepLinkRef.current) return;
+    const d = deepLinkRef.current;
+    deepLinkRef.current = null;
+    if (d.rm) setSelectedMonth(d.rm);
+    window.history.replaceState(null, '', '#/reports');
+  }, [setSelectedMonth]);
+
   const cash = Calc.ledgerSummary(data, selectedMonth);
   const cashDeficit = cash.balance < 0;
   // মাসটি এখনো চলছে — এর হিসাব মাস শেষ হওয়ার আগে তৈরি হওয়ার কথা নয়
@@ -169,9 +212,15 @@ export function ReportView({
     );
     return () => setMonthLock(null);
   }, [reportType, ledgerMonth, ledgerMonthLabel, setMonthLock]);
-  const targetFlats = selectiveFlatIds && selectiveFlatIds.length
-    ? data.flats.filter((f) => selectiveFlatIds.includes(f.id))
+  // বকেয়া পাতা থেকে এলে তার বাছাই, QR স্ক্যানে এলে QR-এর তালিকা — কোনোটাই
+  // না থাকলে সব ফ্ল্যাট। QR-এর তালিকায় অচেনা আইডি থাকলে ফিল্টারে বাদ পড়ে,
+  // সব অচেনা হলে সব ফ্ল্যাটে নেমে আসে।
+  const effSelectiveIds =
+    (selectiveFlatIds && selectiveFlatIds.length ? selectiveFlatIds : null) || deepSelectiveIds;
+  let targetFlats = effSelectiveIds
+    ? data.flats.filter((f) => effSelectiveIds.includes(f.id))
     : data.flats;
+  if (!targetFlats.length) targetFlats = data.flats;
   const selectiveStatuses = targetFlats.map((f) => Calc.flatStatus(data, f, duesUpToMonth));
 
   // হেডারের তারিখ = রিপোর্ট যতটুকু সময় ঢেকেছে তার শেষ দিন। লেজার ছাড়া
@@ -210,6 +259,29 @@ export function ReportView({
   const ledgerFlat = data.flats.find((f) => f.id === selectedLedgerFlatId) || data.flats[0];
   const ledgerRows = ledgerFlat ? Calc.ledger(data, ledgerFlat, ledgerMonth) : [];
   const ledgerStatus = ledgerFlat ? Calc.flatStatus(data, ledgerFlat, ledgerMonth) : null;
+
+  // QR কোডটি ব্রাউজারেই আঁকা হয় (কোনো বাইরের সার্ভিসে যায় না)। লিংকে এখন
+  // খোলা রিপোর্টের পরিচয়ও থাকে — যে রিপোর্ট ছাপা, স্ক্যানে সেটিই খুলবে।
+  // লেজারের মাস কোডেই বাঁধা (সবসময় গত মাস), তাই লেজারে rm পাঠানো হয় না —
+  // পরে স্ক্যান করলে তখনকার হালনাগাদ লেজারটিই দেখাবে।
+  const qrLink = (() => {
+    const q = new URLSearchParams({ rt: reportType });
+    if (reportType === 'ledger') {
+      if (ledgerFlat) q.set('rf', ledgerFlat.id);
+    } else {
+      q.set('rm', selectedMonth);
+      if (reportType === 'selective' && effSelectiveIds && targetFlats.length < data.flats.length) {
+        q.set('rf', targetFlats.map((f) => f.id).join(','));
+      }
+    }
+    return REPORT_LINK + '?' + q.toString();
+  })();
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  useEffect(() => {
+    QRCode.toDataURL(qrLink, { errorCorrectionLevel: 'M', margin: 1, scale: 8 })
+      .then(setQrDataUrl)
+      .catch(() => {});
+  }, [qrLink]);
 
   return (
     <div className="page-body">
@@ -758,6 +830,15 @@ export function ReportView({
             </div>
           </>
         )}
+
+        {/* সব রিপোর্টের নিচে: ছাপা কাগজ থেকে সরাসরি অনলাইন রিপোর্টে যাওয়ার পথ */}
+        <div className="print-footer-link">
+          {qrDataUrl && <img className="qr" src={qrDataUrl} alt="QR কোড" title={qrLink} />}
+          <div className="txt">
+            <div className="t1">এই রিপোর্টটি সরাসরি অনলাইনে দেখতে QR কোডটি স্ক্যান করুন, অথবা ব্রাউজারে লিখুন:</div>
+            <div className="t2">{REPORT_LINK}</div>
+          </div>
+        </div>
       </div>
       </div>
     </div>

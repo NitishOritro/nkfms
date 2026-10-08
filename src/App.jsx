@@ -81,6 +81,9 @@ function tabFromHash() {
   let raw = window.location.hash || '';
   if (raw.charAt(0) === '#') raw = raw.slice(1);
   if (raw.charAt(0) === '/') raw = raw.slice(1);
+  // QR ডিপ-লিংকে পেজের নামের পর ?rt=…&rm=… থাকে — ট্যাব চিনতে সেটুকু বাদ
+  const q = raw.indexOf('?');
+  if (q !== -1) raw = raw.slice(0, q);
   return Object.prototype.hasOwnProperty.call(PAGE_TITLES, raw) ? raw : DEFAULT_TAB;
 }
 
