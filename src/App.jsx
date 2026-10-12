@@ -36,6 +36,7 @@ const FlatManagementView = lazyView(() => import('./views/FlatManagementView'), 
 const CollectorSignatoryView = lazyView(() => import('./views/CollectorSignatoryView'), 'CollectorSignatoryView');
 const SettingsBackupView = lazyView(() => import('./views/SettingsBackupView'), 'SettingsBackupView');
 const ServiceChargeEntryFormView = lazyView(() => import('./views/ServiceChargeEntryFormView'), 'ServiceChargeEntryFormView');
+const ShopRentEntryFormView = lazyView(() => import('./views/ShopRentEntryFormView'), 'ShopRentEntryFormView');
 const ShopRentView = lazyView(() => import('./views/ShopRentView'), 'ShopRentView');
 const ShopRentMonthlyView = lazyView(() => import('./views/ShopRentMonthlyView'), 'ShopRentMonthlyView');
 
@@ -47,7 +48,8 @@ const PAGE_TITLES = {
   collection: 'মাসিক আদায় এন্ট্রি',
   'charge-form': 'সার্ভিস চার্জ এন্ট্রি ফর্ম',
   'flat-entry': 'একক ফ্ল্যাট এন্ট্রি (বিগত ২৫ মাস)',
-  'shop-rent': 'দোকান ভাড়া এন্ট্রি ও দোকানওয়ারি হিসাব',
+  'shop-rent-form': 'দোকান ভাড়া এন্ট্রি ফর্ম',
+  'shop-rent': 'দোকানওয়ারি ভাড়ার হিসাব ও দোকান ব্যবস্থাপনা',
   'shop-rent-monthly': 'মাসভিত্তিক দোকান ভাড়া আদায়',
   summary: 'মাসিক হিসাবায়ন সারসংক্ষেপ',
   ledger: 'আয়-ব্যয় হিসাব',
@@ -73,6 +75,7 @@ const ADMIN_ONLY_TABS = [
   'collection',
   'charge-form',
   'flat-entry',
+  'shop-rent-form',
   'shop-rent',
   'ledger',
   'flats',
@@ -177,6 +180,7 @@ export function App() {
         {currentTab === 'dashboard' && <DashboardView setCurrentTab={setCurrentTab} />}
         {currentTab === 'collection' && !isReadOnly && <MonthlyCollectionView />}
         {currentTab === 'charge-form' && !isReadOnly && <ServiceChargeEntryFormView />}
+        {currentTab === 'shop-rent-form' && !isReadOnly && <ShopRentEntryFormView />}
         {currentTab === 'flat-entry' && !isReadOnly && (
           <SingleFlatEntryView onOpenLedger={() => setCurrentTab('reports')} />
         )}
@@ -195,7 +199,7 @@ export function App() {
               setReportState({ type: 'shop-rent', selectiveIds: null });
               setCurrentTab('reports');
             }}
-            onOpenEntry={() => setCurrentTab('shop-rent')}
+            onOpenEntry={() => setCurrentTab('shop-rent-form')}
           />
         )}
         {currentTab === 'summary' && (

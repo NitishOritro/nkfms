@@ -155,7 +155,7 @@ export function ServiceChargeEntryFormView() {
                 id="scf-owner"
                 className="form-select"
                 value={flatId}
-                onChange={(e) => { setFlatId(e.target.value); setConfirmOverwrite(false); setError(''); }}
+                onChange={(e) => { setFlatId(e.target.value); setOverwriteMode(''); setError(''); }}
               >
                 <option value="">— মালিক নির্বাচন করুন —</option>
                 {flats.map((f) => (
@@ -193,7 +193,7 @@ export function ServiceChargeEntryFormView() {
                 id="scf-month"
                 className="form-select"
                 value={month}
-                onChange={(e) => { setMonth(e.target.value); setConfirmOverwrite(false); setError(''); }}
+                onChange={(e) => { setMonth(e.target.value); setOverwriteMode(''); setError(''); }}
               >
                 {months.map((m) => (
                   <option key={m} value={m}>{U.monthLabel(m)}</option>

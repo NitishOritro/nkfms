@@ -3470,3 +3470,7 @@ table.tbl-shop-matrix th.sub { font-size: 9px; font-weight: 600; padding: 1.5px 
   line-height: 1.4;
   padding: 4px 8px;
 }
+
+/* দোকান ভাড়ার ছকে প্রতিটি দোকানের কলাম-গ্রুপ (ভাড়া + বিদ্যুৎ বিল) ও
+   "মোট জমা" কলামের বাঁ পাশে মোটা কমলা দাগ — কোন ঘর কোন দোকানের, এক নজরে */
+table.tbl-shop-matrix .grp { border-left: 2.5px solid #ea580c; }

@@ -28,7 +28,8 @@ const NAV_GROUPS = [
       { id: 'flat-entry', label: 'একক ফ্ল্যাট এন্ট্রি (২৫ মাস)', icon: Layers, highlight: true, adminOnly: true },
       { id: 'charge-form', label: 'সার্ভিস চার্জ এন্ট্রি ফর্ম', icon: ClipboardList, adminOnly: true },
       // দোকান ভাড়ার এন্ট্রি — কেবল অ্যাডমিন; মাসভিত্তিক তালিকা নিচের দলে সবার জন্য
-      { id: 'shop-rent', label: 'দোকান ভাড়া এন্ট্রি', icon: Store, adminOnly: true }
+      { id: 'shop-rent-form', label: 'দোকান ভাড়া এন্ট্রি ফর্ম', icon: Store, adminOnly: true },
+      { id: 'shop-rent', label: 'দোকানওয়ারি ভাড়ার হিসাব', icon: Store, adminOnly: true }
     ]
   },
   {

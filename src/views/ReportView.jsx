@@ -276,6 +276,9 @@ export function ReportView({
   const shopLegacyFrom = shopLegacy.length ? shopLegacy[0].fromMonth : shopMatrixFrom;
   const shopLegacyTo = shopLegacy.length ? shopLegacy[shopLegacy.length - 1].toMonth : shopMatrixFrom;
   const shopLegacyLabel = s.shopRentLegacyLabel || 'পূর্বের একত্রিত আদায়';
+  // রিপোর্টের পুরো সময়কাল — পুরোনো কাগজের শুরু (আগস্ট-২৩) থেকে নির্বাচিত মাস পর্যন্ত
+  const shopReportFrom = shopLegacy.length ? shopLegacyFrom : shopMatrixFrom;
+  const shopReportMonths = Math.max(0, U.monthIndex(selectedMonth) - U.monthIndex(shopReportFrom) + 1);
 
   // QR কোডটি ব্রাউজারেই আঁকা হয় (কোনো বাইরের সার্ভিসে যায় না)। লিংকে এখন
   // খোলা রিপোর্টের পরিচয়ও থাকে — যে রিপোর্ট ছাপা, স্ক্যানে সেটিই খুলবে।
@@ -873,19 +876,19 @@ export function ReportView({
                 <tr>
                   <th rowSpan={2} style={{ textAlign: 'left', width: '18%' }}>ভাড়ার মাস</th>
                   {shopMatrix.rows.map((r) => (
-                    <th key={r.shop.id} colSpan={2} className="th-paid">
+                    <th key={r.shop.id} colSpan={2} className="th-paid grp">
                       {U.bnDigits(r.shop.shopNo)}নং দোকান
                       {r.shop.tenantName && (
                         <div style={{ fontSize: '8.5px', fontWeight: 400, color: '#475569' }}>{r.shop.tenantName}</div>
                       )}
                     </th>
                   ))}
-                  <th rowSpan={2} className="th-paid" style={{ width: '11%' }}>মোট জমা</th>
+                  <th rowSpan={2} className="th-paid grp" style={{ width: '11%' }}>মোট জমা</th>
                 </tr>
                 <tr>
                   {shopMatrix.rows.map((r) => (
                     <React.Fragment key={r.shop.id}>
-                      <th className="th-paid sub">ভাড়া</th>
+                      <th className="th-paid sub grp">ভাড়া</th>
                       <th className="sub">বিদ্যুৎ<br />বিল</th>
                     </React.Fragment>
                   ))}
@@ -898,10 +901,10 @@ export function ReportView({
                     <td style={{ textAlign: 'left', fontWeight: 600 }}>
                       {U.monthLabelShort(l.fromMonth)} হতে {U.monthLabelShort(l.toMonth)}
                     </td>
-                    <td colSpan={Math.max(1, shopMatrix.rows.length * 2)} style={{ textAlign: 'left', fontSize: '9.5px' }}>
+                    <td colSpan={Math.max(1, shopMatrix.rows.length * 2)} className="grp" style={{ textAlign: 'left', fontSize: '9.5px' }}>
                       {l.label}
                     </td>
-                    <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(l.amount)}</td>
+                    <td className="col-paid grp" style={{ textAlign: 'right' }}>{U.bnNumber(l.amount)}</td>
                   </tr>
                 ))}
                 {shopMatrix.months.map((m, mi) => {
@@ -917,7 +920,7 @@ export function ReportView({
                         return (
                           <React.Fragment key={r.shop.id}>
                             <td
-                              className={!c.chargeable ? 'na' : paid > 0 ? 'col-paid' : 'unpaid'}
+                              className={`grp ${!c.chargeable ? 'na' : paid > 0 ? 'col-paid' : 'unpaid'}`}
                               style={{ textAlign: 'center' }}
                               title={tip}
                             >
@@ -929,7 +932,7 @@ export function ReportView({
                           </React.Fragment>
                         );
                       })}
-                      <td className="col-paid" style={{ textAlign: 'right' }}>{rowTotal ? U.bnNumber(rowTotal) : DASH}</td>
+                      <td className="col-paid grp" style={{ textAlign: 'right' }}>{rowTotal ? U.bnNumber(rowTotal) : DASH}</td>
                     </tr>
                   );
                 })}
@@ -944,7 +947,7 @@ export function ReportView({
                   <td style={{ textAlign: 'right' }}>দোকানওয়ারি মোট জমা</td>
                   {shopMatrix.rows.map((r) => (
                     <React.Fragment key={r.shop.id}>
-                      <td className="col-paid" style={{ textAlign: 'center' }}>
+                      <td className="col-paid grp" style={{ textAlign: 'center' }}>
                         {U.bnNumber(r.totals.rent + r.totals.other)}
                       </td>
                       <td style={{ textAlign: 'center' }}>
@@ -952,14 +955,14 @@ export function ReportView({
                       </td>
                     </React.Fragment>
                   ))}
-                  <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopGridTotal)}</td>
+                  <td className="col-paid grp" style={{ textAlign: 'right' }}>{U.bnNumber(shopGridTotal)}</td>
                 </tr>
                 {shopLegacy.length > 0 && (
                   <tr>
                     <td colSpan={shopMatrix.rows.length * 2 + 1} style={{ textAlign: 'right' }}>
                       সর্বমোট দোকান ভাড়া আদায়
                     </td>
-                    <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopGridTotal + shopLegacyTotal)}</td>
+                    <td className="col-paid grp" style={{ textAlign: 'right' }}>{U.bnNumber(shopGridTotal + shopLegacyTotal)}</td>
                   </tr>
                 )}
               </tfoot>
@@ -1011,8 +1014,8 @@ export function ReportView({
             </div>
 
             <div className="print-foot">
-              মোট দোকান: {U.bnDigits(shopMatrix.rows.length)} &nbsp;|&nbsp; {U.monthLabelShort(shopMatrixFrom)} হতে {monthShort}{' '}
-              ({U.bnDigits(shopMatrix.months.length)} মাস) &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
+              মোট দোকান: {U.bnDigits(shopMatrix.rows.length)} &nbsp;|&nbsp; {U.monthLabelShort(shopReportFrom)} হতে {monthShort} এর{' '}
+              (মোট {U.bnDigits(shopReportMonths)} মাস) &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
             </div>
           </>
         )}
