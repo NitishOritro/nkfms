@@ -3370,3 +3370,103 @@ table.cashbook-table tfoot tr.cashbook-note td {
   letter-spacing: 0.2px;
   word-break: break-all;
 }
+
+
+/* ==========================================================================
+   ২৫. দোকান ভাড়া — এন্ট্রি পাতা ও রিপোর্ট
+   ========================================================================== */
+
+.shop-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0 14px;
+}
+
+/* দোকান বাছাইয়ের পিল — কোন দোকানের বকেয়া আছে, এক নজরে */
+.shop-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.shop-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 170px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.shop-pill:hover { border-color: var(--primary); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.shop-pill.active { border-color: var(--primary); background: #eff6ff; box-shadow: 0 0 0 2px var(--focus-ring); }
+.shop-pill.inactive { opacity: 0.6; }
+.shop-pill .sp-no { font-weight: 700; font-size: 14px; color: var(--primary-dark); }
+.shop-pill .sp-name { font-size: 12px; color: #475569; }
+.shop-pill .sp-due { font-size: 11px; color: var(--success); font-weight: 600; margin-top: 2px; }
+.shop-pill .sp-due.has-due { color: var(--danger); }
+
+/* মাসভিত্তিক এন্ট্রি গ্রিড */
+.shop-grid-wrap { max-height: 62vh; }
+.shop-grid th { white-space: nowrap; }
+.shop-grid td { vertical-align: middle; }
+.shop-grid tr.paid-row > td:first-child { border-left: 3px solid var(--success); }
+.shop-grid tr.dirty-row > td { background: #fffbeb; }
+.shop-grid tfoot td { position: sticky; bottom: 0; z-index: 2; }
+
+/* রিপোর্ট — ছোট ক্যাপশন ও ছকের ঘর */
+.shop-report-caption {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 6px 0 4px;
+}
+table.tbl-shop-matrix th,
+table.tbl-shop-matrix td {
+  font-size: 9.5px;
+  padding: 3px 3px;
+}
+table.tbl-shop-matrix td.na { background: #f1f5f9; }
+table.tbl-shop-matrix td.unpaid { background: #fff1f2; }
+table.tbl-shop-month th,
+table.tbl-shop-month td { font-size: 10.5px; }
+
+@media (max-width: 700px) {
+  .shop-pill { min-width: calc(50% - 5px); }
+}
+
+/* মাসভিত্তিক দোকান ভাড়ার তালিকা */
+.shop-monthly td { vertical-align: top; }
+.shop-monthly tr.is-selected > td { background: #eff6ff; }
+.shop-monthly tr.is-selected > td:first-child { border-left: 3px solid var(--primary); }
+.shop-monthly-line { font-size: 12.5px; line-height: 1.6; }
+.shop-monthly-line + .shop-monthly-line { margin-top: 3px; }
+
+/* "খ" ছক এখন মাস সারিতে, দোকান কলামে — কলাম কম, তাই বড় হরফ চলে */
+table.tbl-shop-matrix th,
+table.tbl-shop-matrix td {
+  font-size: 10.5px;
+  padding: 2.5px 5px;
+}
+table.tbl-shop-matrix.is-dense th,
+table.tbl-shop-matrix.is-dense td {
+  font-size: 9px;
+  padding: 1.5px 4px;
+}
+table.tbl-shop-matrix tr.legacy-row > td { background: #f1f5f9; }
+
+/* ছকের উপ-শিরোনাম (ভাড়া / বিদ্যুৎ বিল) — একটু ছোট, হালকা */
+table.tbl-shop-matrix th.sub { font-size: 9px; font-weight: 600; padding: 1.5px 3px; }
+
+/* দোকান ভাড়া বিবরণীর বি.দ্র. লম্বা — তাই ছোট হরফ */
+.print-note.print-note-sm {
+  font-size: 10.5px;
+  line-height: 1.4;
+  padding: 4px 8px;
+}

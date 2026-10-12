@@ -36,6 +36,8 @@ const FlatManagementView = lazyView(() => import('./views/FlatManagementView'), 
 const CollectorSignatoryView = lazyView(() => import('./views/CollectorSignatoryView'), 'CollectorSignatoryView');
 const SettingsBackupView = lazyView(() => import('./views/SettingsBackupView'), 'SettingsBackupView');
 const ServiceChargeEntryFormView = lazyView(() => import('./views/ServiceChargeEntryFormView'), 'ServiceChargeEntryFormView');
+const ShopRentView = lazyView(() => import('./views/ShopRentView'), 'ShopRentView');
+const ShopRentMonthlyView = lazyView(() => import('./views/ShopRentMonthlyView'), 'ShopRentMonthlyView');
 
 // ---------------------------------------------------------------------------
 //  পেজের নাম — ঠিকানার হ্যাশ ও ব্রাউজার ট্যাবের শিরোনাম, দুটোরই উৎস
@@ -45,6 +47,8 @@ const PAGE_TITLES = {
   collection: 'মাসিক আদায় এন্ট্রি',
   'charge-form': 'সার্ভিস চার্জ এন্ট্রি ফর্ম',
   'flat-entry': 'একক ফ্ল্যাট এন্ট্রি (বিগত ২৫ মাস)',
+  'shop-rent': 'দোকান ভাড়া এন্ট্রি ও দোকানওয়ারি হিসাব',
+  'shop-rent-monthly': 'মাসভিত্তিক দোকান ভাড়া আদায়',
   summary: 'মাসিক হিসাবায়ন সারসংক্ষেপ',
   ledger: 'আয়-ব্যয় হিসাব',
   defaulters: 'বকেয়া ফ্ল্যাটের তালিকা',
@@ -69,6 +73,7 @@ const ADMIN_ONLY_TABS = [
   'collection',
   'charge-form',
   'flat-entry',
+  'shop-rent',
   'ledger',
   'flats',
   'collectors',
@@ -174,6 +179,24 @@ export function App() {
         {currentTab === 'charge-form' && !isReadOnly && <ServiceChargeEntryFormView />}
         {currentTab === 'flat-entry' && !isReadOnly && (
           <SingleFlatEntryView onOpenLedger={() => setCurrentTab('reports')} />
+        )}
+        {currentTab === 'shop-rent' && !isReadOnly && (
+          <ShopRentView
+            onOpenPrint={() => {
+              setReportState({ type: 'shop-rent', selectiveIds: null });
+              setCurrentTab('reports');
+            }}
+          />
+        )}
+        {/* মাসভিত্তিক দোকান ভাড়া — ভিউ মোডেও দেখা যায় */}
+        {currentTab === 'shop-rent-monthly' && (
+          <ShopRentMonthlyView
+            onOpenPrint={() => {
+              setReportState({ type: 'shop-rent', selectiveIds: null });
+              setCurrentTab('reports');
+            }}
+            onOpenEntry={() => setCurrentTab('shop-rent')}
+          />
         )}
         {currentTab === 'summary' && (
           <MonthlySummaryView

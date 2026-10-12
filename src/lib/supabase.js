@@ -142,3 +142,65 @@ export const ledgerToRow = (e) => ({
   ref_id: e.refId || null,
   note: e.note || ''
 });
+
+// ---------------------------------------------------------------------------
+//  দোকান ও দোকান ভাড়ার আদায়
+//  shops      — দোকানের তালিকা (ফ্ল্যাটের flats টেবিলের অনুরূপ)
+//  shop_rents — প্রতিটি আদায়: কোন দোকান, কোন মাসের ভাড়া (rentMonth), কোন
+//               মাসের খতিয়ানে জমা (paidMonth), ভাড়া/বিদ্যুৎ/অন্যান্য (kind)
+// ---------------------------------------------------------------------------
+
+export const shopFromRow = (r) => ({
+  id: r.id,
+  serial: r.serial ?? null,
+  shopNo: r.shop_no || '',
+  tenantName: r.tenant_name || '',
+  phone: r.phone || '',
+  monthlyRent: Number(r.monthly_rent) || 0,
+  // ভাড়া বদলের ইতিহাস: [{ fromMonth: '2026-07', rate: 3000 }]
+  rentHistory: Array.isArray(r.rent_history) ? r.rent_history : [],
+  electricityShare: Number(r.electricity_share) || 0,
+  active: r.active !== false,
+  joinMonth: r.join_month || '',
+  closedFrom: r.closed_from || '',
+  note: r.note || ''
+});
+
+export const shopToRow = (s) => ({
+  id: s.id,
+  serial: s.serial ?? null,
+  shop_no: s.shopNo || '',
+  tenant_name: s.tenantName || '',
+  phone: s.phone || '',
+  monthly_rent: Number(s.monthlyRent) || 0,
+  rent_history: Array.isArray(s.rentHistory) && s.rentHistory.length ? s.rentHistory : null,
+  electricity_share: Number(s.electricityShare) || 0,
+  active: s.active !== false,
+  join_month: s.joinMonth || null,
+  closed_from: s.closedFrom || null,
+  note: s.note || ''
+});
+
+export const shopRentFromRow = (r) => ({
+  id: r.id,
+  shopId: r.shop_id,
+  rentMonth: r.rent_month,
+  paidMonth: r.paid_month || r.rent_month,
+  kind: r.kind || 'rent',                 // 'rent' | 'electricity' | 'other'
+  amount: Number(r.amount) || 0,
+  collectorId: r.collector_id || '',
+  receivedOn: r.received_on || '',
+  note: r.note || ''
+});
+
+export const shopRentToRow = (p) => ({
+  id: p.id,
+  shop_id: p.shopId,
+  rent_month: p.rentMonth,
+  paid_month: p.paidMonth || p.rentMonth,
+  kind: p.kind || 'rent',
+  amount: Number(p.amount) || 0,
+  collector_id: p.collectorId || '',
+  received_on: p.receivedOn || '',
+  note: p.note || ''
+});

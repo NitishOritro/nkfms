@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../context/DataContext';
 import * as Calc from '../utils/calc';
 import * as U from '../utils/format';
-import { Printer, FileText, ChevronLeft, ChevronDown, Layers, Building2 } from 'lucide-react';
+import { Printer, FileText, ChevronLeft, ChevronDown, Layers, Building2, Store } from 'lucide-react';
 import { Watermark } from '../components/Watermark';
 import { ResidentBadge } from '../components/ResidentBadge';
 import { MonthSelector } from '../components/MonthSelector';
@@ -14,7 +14,7 @@ const REPORT_LINK = 'https://nkfms-8c1a6.web.app/#/reports';
 
 // QR-এ রিপোর্টের পরিচয়ও থাকে: #/reports?rt=<ধরন>&rm=<মাস>&rf=<ফ্ল্যাট>।
 // স্ক্যান করলে ভিউ মোডে ঢুকে (AuthContext) ঠিক সেই রিপোর্টটিই খুলে যায়।
-const REPORT_TYPES = ['monthly', 'selective', 'cashbook', 'ledger'];
+const REPORT_TYPES = ['monthly', 'selective', 'cashbook', 'ledger', 'shop-rent'];
 function readDeepLink() {
   const h = typeof window !== 'undefined' ? window.location.hash || '' : '';
   const qi = h.indexOf('?');
@@ -260,6 +260,23 @@ export function ReportView({
   const ledgerRows = ledgerFlat ? Calc.ledger(data, ledgerFlat, ledgerMonth) : [];
   const ledgerStatus = ledgerFlat ? Calc.flatStatus(data, ledgerFlat, ledgerMonth) : null;
 
+  // ---- দোকান ভাড়া বিবরণী ----
+  // উপরের টেবিল: নির্বাচিত মাসের খতিয়ানে (জমার মাস) দোকান ভাড়া খাতে কত উঠল,
+  // কোন দোকান থেকে। নিচের ছক: গত ১২ মাসের (ভাড়ার মাস) দোকান × মাস — কোন
+  // মাসের ভাড়া জমা পড়েছে, কোনটি বকেয়া, এক নজরে।
+  // "খ" ছক: সফটওয়্যারের শুরুর মাস (আগস্ট-২৪) থেকে নির্বাচিত মাস পর্যন্ত সব মাস।
+  // মাস অনেক, তাই মাসগুলো সারিতে আর দোকানগুলো কলামে — A4-এ ধরে।
+  const shopMatrixFrom = s.startMonth || '2024-08';
+  const shopMatrix = Calc.shopRentMatrix(data, shopMatrixFrom, selectedMonth);
+  const shopGridElec = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.electricity, 0);
+  const shopGridTotal = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.rent + r.totals.other, 0) + shopGridElec;
+  // পুরোনো কাগজের একত্রিত "দোকান ভাড়া ও বিবিধ আয়" (সেটিংসে shopRentLegacy)
+  const shopLegacy = Calc.shopRentLegacy(data);
+  const shopLegacyTotal = shopLegacy.reduce((s2, l) => s2 + l.amount, 0);
+  const shopLegacyFrom = shopLegacy.length ? shopLegacy[0].fromMonth : shopMatrixFrom;
+  const shopLegacyTo = shopLegacy.length ? shopLegacy[shopLegacy.length - 1].toMonth : shopMatrixFrom;
+  const shopLegacyLabel = s.shopRentLegacyLabel || 'পূর্বের একত্রিত আদায়';
+
   // QR কোডটি ব্রাউজারেই আঁকা হয় (কোনো বাইরের সার্ভিসে যায় না)। লিংকে এখন
   // খোলা রিপোর্টের পরিচয়ও থাকে — যে রিপোর্ট ছাপা, স্ক্যানে সেটিই খুলবে।
   // লেজারের মাস কোডেই বাঁধা (সবসময় গত মাস), তাই লেজারে rm পাঠানো হয় না —
@@ -322,6 +339,12 @@ export function ReportView({
             className={`btn btn-sm ${reportType === 'ledger' ? 'btn-primary' : 'btn-outline'}`}
           >
             ফ্ল্যাটভিত্তিক লেজার স্টেটমেন্ট
+          </button>
+          <button
+            onClick={() => setReportType('shop-rent')}
+            className={`btn btn-sm ${reportType === 'shop-rent' ? 'btn-primary' : 'btn-outline'}`}
+          >
+            <Store size={14} /> দোকান ভাড়া বিবরণী
           </button>
 
           {/* ফ্ল্যাট বাছাইয়ের ঘরটি আগে ডান কোণে প্রিন্ট বোতামের পাশে ছিল,
@@ -433,6 +456,7 @@ export function ReportView({
               {reportType === 'selective' && `ফ্ল্যাট মালিকদের বকেয়া সার্ভিস চার্জ বিবরণী (${U.monthLabel(duesUpToMonth)} পর্যন্ত)`}
               {reportType === 'cashbook' && `সার্ভিস হিসাবায়ন সারসংক্ষেপ (${monthShort})`}
               {reportType === 'ledger' && `ফ্ল্যাটভিত্তিক সার্ভিস চার্জ লেজার ও বকেয়া বিবরণী (${ledgerMonthLabel} পর্যন্ত)`}
+              {reportType === 'shop-rent' && `দোকান ভাড়া আদায় ও বকেয়া বিবরণী (${monthShort})`}
             </div>
           </div>
           <div className="head-date">
@@ -834,6 +858,161 @@ export function ReportView({
                   <div className="dg">{s.committeeName}</div>
                 </div>
               ))}
+            </div>
+          </>
+        )}
+
+        {/* REPORT 5: দোকান ভাড়া — মাসভিত্তিক, দোকানওয়ারি */}
+        {reportType === 'shop-rent' && (
+          <>
+            <div className="shop-report-caption">
+              দোকানওয়ারি ভাড়া জমার ছক — {U.monthLabelShort(shopMatrixFrom)} হতে {monthShort} (ভাড়ার মাস অনুযায়ী)
+            </div>
+            <table className={`print-table tbl-shop-matrix${shopMatrix.months.length > 30 ? ' is-dense' : ''}`}>
+              <thead>
+                <tr>
+                  <th rowSpan={2} style={{ textAlign: 'left', width: '18%' }}>ভাড়ার মাস</th>
+                  {shopMatrix.rows.map((r) => (
+                    <th key={r.shop.id} colSpan={2} className="th-paid">
+                      {U.bnDigits(r.shop.shopNo)}নং দোকান
+                      {r.shop.tenantName && (
+                        <div style={{ fontSize: '8.5px', fontWeight: 400, color: '#475569' }}>{r.shop.tenantName}</div>
+                      )}
+                    </th>
+                  ))}
+                  <th rowSpan={2} className="th-paid" style={{ width: '11%' }}>মোট জমা</th>
+                </tr>
+                <tr>
+                  {shopMatrix.rows.map((r) => (
+                    <React.Fragment key={r.shop.id}>
+                      <th className="th-paid sub">ভাড়া</th>
+                      <th className="sub">বিদ্যুৎ<br />বিল</th>
+                    </React.Fragment>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {/* পুরোনো কাগজের একত্রিত আদায় — দোকানওয়ারি ভাঙা নেই, তাই পুরো সারি জুড়ে */}
+                {shopLegacy.map((l) => (
+                  <tr key={l.id} className="legacy-row">
+                    <td style={{ textAlign: 'left', fontWeight: 600 }}>
+                      {U.monthLabelShort(l.fromMonth)} হতে {U.monthLabelShort(l.toMonth)}
+                    </td>
+                    <td colSpan={Math.max(1, shopMatrix.rows.length * 2)} style={{ textAlign: 'left', fontSize: '9.5px' }}>
+                      {l.label}
+                    </td>
+                    <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(l.amount)}</td>
+                  </tr>
+                ))}
+                {shopMatrix.months.map((m, mi) => {
+                  const ct = shopMatrix.colTotals[mi];
+                  const rowTotal = ct.rent + ct.other + ct.electricity;
+                  return (
+                    <tr key={m}>
+                      <td style={{ textAlign: 'left' }}><b>{U.monthLabel(m)}</b></td>
+                      {shopMatrix.rows.map((r) => {
+                        const c = r.cells[mi];
+                        const paid = c.rent + c.other;
+                        const tip = c.paidMonths.length ? `জমার মাস: ${c.paidMonths.map(U.monthLabelShort).join(', ')}` : undefined;
+                        return (
+                          <React.Fragment key={r.shop.id}>
+                            <td
+                              className={!c.chargeable ? 'na' : paid > 0 ? 'col-paid' : 'unpaid'}
+                              style={{ textAlign: 'center' }}
+                              title={tip}
+                            >
+                              {!c.chargeable ? '' : paid > 0 ? U.bnNumber(paid) : DASH}
+                            </td>
+                            <td className={!c.chargeable ? 'na' : undefined} style={{ textAlign: 'center' }} title={tip}>
+                              {c.electricity > 0 ? U.bnNumber(c.electricity) : ''}
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                      <td className="col-paid" style={{ textAlign: 'right' }}>{rowTotal ? U.bnNumber(rowTotal) : DASH}</td>
+                    </tr>
+                  );
+                })}
+                {!shopMatrix.rows.length && (
+                  <tr>
+                    <td colSpan={2} style={{ textAlign: 'center', padding: '14px' }}>দোকানের তালিকা খালি।</td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td style={{ textAlign: 'right' }}>দোকানওয়ারি মোট জমা</td>
+                  {shopMatrix.rows.map((r) => (
+                    <React.Fragment key={r.shop.id}>
+                      <td className="col-paid" style={{ textAlign: 'center' }}>
+                        {U.bnNumber(r.totals.rent + r.totals.other)}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {r.totals.electricity ? U.bnNumber(r.totals.electricity) : ''}
+                      </td>
+                    </React.Fragment>
+                  ))}
+                  <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopGridTotal)}</td>
+                </tr>
+                {shopLegacy.length > 0 && (
+                  <tr>
+                    <td colSpan={shopMatrix.rows.length * 2 + 1} style={{ textAlign: 'right' }}>
+                      সর্বমোট দোকান ভাড়া আদায়
+                    </td>
+                    <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopGridTotal + shopLegacyTotal)}</td>
+                  </tr>
+                )}
+              </tfoot>
+            </table>
+
+            <div className="print-totals">
+              {shopLegacy.length > 0 && (
+                <div className="box">
+                  {shopLegacyLabel} ({U.monthLabelShort(shopLegacyFrom)} হতে {U.monthLabelShort(shopLegacyTo)}) পর্যন্ত
+                  দোকান ভাড়া ও বিবিধ হতে আয়:{' '}
+                  <b className="amt-paid">{U.bnNumber(shopLegacyTotal)}/-</b>
+                </div>
+              )}
+              <div className="box">
+                দোকানওয়ারি জমা ({U.monthLabelShort(shopMatrixFrom)} হতে {monthShort}), ভাড়া ও বিদ্যুৎ বিলসহ:{' '}
+                <b className="amt-paid">{U.bnNumber(shopGridTotal)}/-</b>
+                <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
+                  এর মধ্যে বিদ্যুৎ বিল {U.bnNumber(shopGridElec)}/-
+                </div>
+              </div>
+              <div className="box" style={{ border: '2px solid #000' }}>
+                সর্বমোট আদায় ({U.monthLabelShort(shopLegacy.length ? shopLegacyFrom : shopMatrixFrom)} হতে {monthShort} পর্যন্ত):{' '}
+                <b className="amt-paid">{U.bnNumber(shopGridTotal + shopLegacyTotal)}/-</b>
+              </div>
+            </div>
+
+            <div className="print-note print-note-sm">
+              <span className="print-note-tag">বি.দ্র.</span>
+              <span>
+                ছকটি ভাড়ার মাস অনুযায়ী — ঘরে অঙ্ক থাকলে ঐ মাসের ভাড়া জমা পড়েছে, {DASH} থাকলে
+                বকেয়া, ফাঁকা ঘর মানে ঐ মাসে দোকানটি ভাড়ায় ছিল না। প্রতিটি দোকানের পাশের কলামে ঐ মাসের
+                বিদ্যুৎ বিল; মোট জমায় ভাড়া ও বিদ্যুৎ বিল দুটোই আছে, বকেয়ার হিসাবে শুধু ভাড়া।
+                {shopLegacy.length > 0 && (
+                  <> উপরের ধূসর সারিগুলো পুরোনো কাগজের একত্রিত হিসাব — দোকানওয়ারি ভাঙা নেই, বকেয়ার হিসাবেও ধরা হয়নি।</>
+                )}
+              </span>
+            </div>
+
+            <div className="print-signs">
+              {(s.signatories || []).map((sig) => (
+                <div key={sig.id} className="s">
+                  <div className="line"></div>
+                  <div className="sd">স্বাক্ষরিত/-</div>
+                  <div className="nm">{sig.name}</div>
+                  <div className="dg">{sig.designation}</div>
+                  <div className="dg">{s.committeeName}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="print-foot">
+              মোট দোকান: {U.bnDigits(shopMatrix.rows.length)} &nbsp;|&nbsp; {U.monthLabelShort(shopMatrixFrom)} হতে {monthShort}{' '}
+              ({U.bnDigits(shopMatrix.months.length)} মাস) &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
             </div>
           </>
         )}

@@ -52,8 +52,15 @@ async function upsert(table, rows, conflict) {
     ['flats', 'id'],
     ['payments', 'flat_id,month'],
     ['ledger_entries', 'id'],
+    // দোকান ভাড়া — পুরোনো ব্যাকআপে এই দুটি ফাইল না থাকলে বাদ পড়ে
+    ['shops', 'id'],
+    ['shop_rents', 'id'],
   ];
   for (const [t, conflict] of plan) {
+    if (!fs.existsSync(path.join(dir, t + '.json'))) {
+      console.log(`${t.padEnd(16)}    — ফাইল নেই, বাদ`);
+      continue;
+    }
     const rows = read(t);
     console.log(`${t.padEnd(16)} ${String(rows.length).padStart(4)} সারি ${write ? '→ তোলা হচ্ছে…' : ''}`);
     if (write) await upsert(t, rows, conflict);

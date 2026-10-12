@@ -8,7 +8,11 @@ import {
   paymentFromRow,
   paymentToRow,
   ledgerFromRow,
-  ledgerToRow
+  ledgerToRow,
+  shopFromRow,
+  shopToRow,
+  shopRentFromRow,
+  shopRentToRow
 } from '../lib/supabase';
 
 const DataContext = createContext();
@@ -68,12 +72,14 @@ export function DataProvider({ children }) {
       return;
     }
     try {
-      const [settingsRes, flatsRes, paymentsRes, ledgerRes] = await Promise.all([
+      const [settingsRes, flatsRes, paymentsRes, ledgerRes, shopsRes, shopRentsRes] = await Promise.all([
         supabase.from('app_settings').select('data').eq('id', 1).single(),
         supabase.from('flats').select('*').order('serial', { ascending: true }),
         // ১০০০ সারির ডিফল্ট সীমা ছাড়িয়ে যাওয়া ঠেকাতে সুস্পষ্ট range
         supabase.from('payments').select('*').range(0, 99999),
-        supabase.from('ledger_entries').select('*').range(0, 99999)
+        supabase.from('ledger_entries').select('*').range(0, 99999),
+        supabase.from('shops').select('*').order('serial', { ascending: true }),
+        supabase.from('shop_rents').select('*').range(0, 99999)
       ]);
 
       if (settingsRes.error) throw settingsRes.error;
@@ -85,6 +91,12 @@ export function DataProvider({ children }) {
       if (ledgerRes.error) {
         console.warn('ledger_entries পড়া যায়নি (supabase/06_ledger.sql চালানো হয়েছে?):', ledgerRes.error.message);
       }
+      // দোকান ভাড়ার টেবিল দুটিও ঐচ্ছিক — sql/shop-rent.sql না চালানো থাকলে
+      // কেবল "দোকান ভাড়া" পাতাটি সতর্কবার্তা দেখাবে, বাকি সব চলবে।
+      const shopsError = shopsRes.error || shopRentsRes.error;
+      if (shopsError) {
+        console.warn('shops / shop_rents পড়া যায়নি (sql/shop-rent.sql চালানো হয়েছে?):', shopsError.message);
+      }
 
       setData({
         version: 1,
@@ -92,7 +104,10 @@ export function DataProvider({ children }) {
         flats: (flatsRes.data || []).map(flatFromRow),
         payments: (paymentsRes.data || []).map(paymentFromRow),
         ledgerEntries: ledgerRes.error ? [] : (ledgerRes.data || []).map(ledgerFromRow),
-        ledgerReady: !ledgerRes.error
+        ledgerReady: !ledgerRes.error,
+        shops: shopsError ? [] : (shopsRes.data || []).map(shopFromRow),
+        shopRents: shopsError ? [] : (shopRentsRes.data || []).map(shopRentFromRow),
+        shopsReady: !shopsError
       });
       setLoadError(null);
     } catch (e) {
@@ -103,6 +118,25 @@ export function DataProvider({ children }) {
 
   useEffect(() => {
     loadAll();
+  }, [loadAll]);
+
+  // ট্যাবে ফিরে এলে (শেষ পড়ার অন্তত ১ মিনিট পর) ডাটাবেজ থেকে আবার পড়া।
+  // Supabase ড্যাশবোর্ডে SQL চালিয়ে বা অন্য ডিভাইস থেকে এন্ট্রি দিয়ে এলে
+  // খোলা ট্যাবটি পুরোনো হিসাব দেখাত, F5 না চাপা পর্যন্ত বোঝার উপায় ছিল না।
+  useEffect(() => {
+    let last = Date.now();
+    const refetch = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (Date.now() - last < 60 * 1000) return;
+      last = Date.now();
+      loadAll();
+    };
+    document.addEventListener('visibilitychange', refetch);
+    window.addEventListener('focus', refetch);
+    return () => {
+      document.removeEventListener('visibilitychange', refetch);
+      window.removeEventListener('focus', refetch);
+    };
   }, [loadAll]);
 
   // ---- লগইনের অবস্থা ------------------------------------------------------
@@ -291,6 +325,115 @@ export function DataProvider({ children }) {
     ).then((ok) => ok && addToast('সারিগুলো সংরক্ষিত হয়েছে।', 'success'));
   };
 
+  // ---- দোকান ও দোকান ভাড়া ---------------------------------------------------
+  const normalizeShop = (s, existing) => ({
+    id: existing ? existing.id : s.id || newId('shop'),
+    serial: Number(s.serial) || (existing ? existing.serial : (data.shops || []).length + 1),
+    shopNo: (s.shopNo || '').trim(),
+    tenantName: (s.tenantName || '').trim(),
+    phone: (s.phone || '').trim(),
+    monthlyRent: Number(s.monthlyRent) || 0,
+    rentHistory: (Array.isArray(s.rentHistory) ? s.rentHistory : [])
+      .filter((h) => h && /^\d{4}-\d{2}$/.test(h.fromMonth || ''))
+      .map((h) => ({ fromMonth: h.fromMonth, rate: Number(h.rate) || 0 }))
+      .sort((a, b) => U.monthIndex(a.fromMonth) - U.monthIndex(b.fromMonth)),
+    electricityShare: Number(s.electricityShare) || 0,
+    active: s.active !== false,
+    joinMonth: s.joinMonth || '',
+    closedFrom: s.closedFrom || '',
+    note: (s.note || '').trim()
+  });
+
+  const saveShop = (shopData) => {
+    if (!guard()) return null;
+    const existing = (data.shops || []).find((x) => x.id === shopData.id);
+    const record = normalizeShop(shopData, existing);
+    setData((prev) => {
+      const list = [...(prev.shops || [])];
+      const idx = list.findIndex((x) => x.id === record.id);
+      if (idx >= 0) list[idx] = record;
+      else list.push(record);
+      return { ...prev, shops: list };
+    });
+    runWrite(
+      () => supabase.from('shops').upsert(shopToRow(record), { onConflict: 'id' }),
+      'দোকানের তথ্য সংরক্ষণ করা যায়নি'
+    ).then(
+      (ok) =>
+        ok &&
+        addToast(existing ? 'দোকানের তথ্য হালনাগাদ হয়েছে।' : 'নতুন দোকান যুক্ত হয়েছে।', 'success')
+    );
+    return record;
+  };
+
+  // দোকান মুছলে তার সব আদায়ও মুছে যায় (ডাটাবেজে ON DELETE CASCADE)
+  const deleteShop = (shopId) => {
+    if (!guard()) return;
+    setData((prev) => ({
+      ...prev,
+      shops: (prev.shops || []).filter((x) => x.id !== shopId),
+      shopRents: (prev.shopRents || []).filter((r) => r.shopId !== shopId)
+    }));
+    runWrite(
+      () => supabase.from('shops').delete().eq('id', shopId),
+      'দোকান মুছে ফেলা যায়নি'
+    ).then((ok) => ok && addToast('দোকান ও তার সব আদায় মুছে ফেলা হয়েছে।', 'warning'));
+  };
+
+  // একটি দোকানের একটি মাসের (rentMonth) ভাড়া/বিদ্যুৎ/অন্যান্য — শূন্য অঙ্ক
+  // মানে সারিটি মুছে ফেলা; নইলে (shop, rentMonth, kind) ধরে upsert।
+  const saveShopRents = (entries) => {
+    if (!guard()) return;
+    const keyOf = (r) => `${r.shopId}_${r.rentMonth}_${r.kind || 'rent'}`;
+    const byKey = new Map((data.shopRents || []).map((r) => [keyOf(r), r]));
+
+    const upserts = [];
+    const deleteIds = [];
+    entries.forEach((e) => {
+      const kind = e.kind || 'rent';
+      const existing = byKey.get(`${e.shopId}_${e.rentMonth}_${kind}`);
+      const amount = Number(e.amount) || 0;
+      if (amount <= 0) {
+        if (existing) deleteIds.push(existing.id);
+        return;
+      }
+      upserts.push({
+        id: existing ? existing.id : `sr-${e.shopId}-${e.rentMonth}-${kind}`,
+        shopId: e.shopId,
+        rentMonth: e.rentMonth,
+        paidMonth: e.paidMonth || e.rentMonth,
+        kind,
+        amount,
+        collectorId: e.collectorId || '',
+        receivedOn: e.receivedOn || U.monthEndIso(e.paidMonth || e.rentMonth),
+        note: (e.note || '').trim()
+      });
+    });
+    if (!upserts.length && !deleteIds.length) return;
+
+    setData((prev) => {
+      const m = new Map((prev.shopRents || []).map((r) => [r.id, r]));
+      deleteIds.forEach((id) => m.delete(id));
+      upserts.forEach((r) => m.set(r.id, r));
+      return { ...prev, shopRents: Array.from(m.values()) };
+    });
+
+    runWrite(async () => {
+      if (deleteIds.length) {
+        const { error } = await supabase.from('shop_rents').delete().in('id', deleteIds);
+        if (error) return { error };
+      }
+      if (upserts.length) {
+        return supabase
+          .from('shop_rents')
+          .upsert(upserts.map(shopRentToRow), { onConflict: 'shop_id,rent_month,kind' });
+      }
+      return { error: null };
+    }, 'দোকান ভাড়ার এন্ট্রি সংরক্ষণ করা যায়নি').then(
+      (ok) => ok && addToast('দোকান ভাড়ার এন্ট্রি সংরক্ষিত হয়েছে।', 'success')
+    );
+  };
+
   // ---- ফ্ল্যাট -------------------------------------------------------------
   const updateFlat = (flatId, flatData) => {
     if (!guard()) return;
@@ -389,6 +532,22 @@ export function DataProvider({ children }) {
           .upsert(rows.slice(i, i + 200), { onConflict: 'flat_id,month' });
         if (pErr) throw pErr;
       }
+      // দোকান ও দোকান ভাড়া — ব্যাকআপে থাকলে (পুরোনো ব্যাকআপে নেই)
+      if (Array.isArray(jsonObj.shops) && jsonObj.shops.length) {
+        const { error: sErr } = await supabase
+          .from('shops')
+          .upsert(jsonObj.shops.map(shopToRow), { onConflict: 'id' });
+        if (sErr) throw sErr;
+      }
+      if (Array.isArray(jsonObj.shopRents) && jsonObj.shopRents.length) {
+        const srows = jsonObj.shopRents.map(shopRentToRow);
+        for (let i = 0; i < srows.length; i += 200) {
+          const { error: rErr } = await supabase
+            .from('shop_rents')
+            .upsert(srows.slice(i, i + 200), { onConflict: 'id' });
+          if (rErr) throw rErr;
+        }
+      }
       await loadAll();
       addToast('ব্যাকআপ ফাইল থেকে সকল ডেটা ডাটাবেজে তোলা হয়েছে।', 'success');
       return true;
@@ -461,6 +620,9 @@ export function DataProvider({ children }) {
         bulkSetPayments,
         updateFlat,
         addFlat,
+        saveShop,
+        deleteShop,
+        saveShopRents,
         updateSettings,
         updateCollectors,
         updateSignatories,

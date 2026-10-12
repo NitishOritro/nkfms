@@ -245,6 +245,11 @@ export function lastSelectableMonth(data) {
     const i = U.monthIndex(p.month);
     if (i > idx) idx = i;
   });
+  // দোকান ভাড়ার জমার মাসও তালিকায় থাকা দরকার
+  (data.shopRents || []).forEach((r) => {
+    const i = U.monthIndex(r.paidMonth);
+    if (i > idx) idx = i;
+  });
   return U.indexToMonth(idx);
 }
 
@@ -298,7 +303,13 @@ export function ledgerSummary(data, month) {
     all.filter((e) => e.source === 'collector').map((e) => e.refId || '')
   );
 
-  const auto = collectorLedgerRows(data, month)
+  // পুরোনো মাসগুলোর হিসাব কাগজ (PDF) থেকে হুবহু তোলা — সেখানে আদায়কারীদের
+  // সারি কাগজের অঙ্কেই আছে। সেটিংসে ledgerAutoFromMonth থাকলে তার আগের
+  // মাসে স্বয়ংক্রিয় সারি বসে না, নইলে কাগজের উপর আরেক দফা আদায় যোগ হতো।
+  const autoFrom = data.settings.ledgerAutoFromMonth;
+  const autoAllowed = !autoFrom || U.monthIndex(month) >= U.monthIndex(autoFrom);
+
+  const auto = (autoAllowed ? collectorLedgerRows(data, month) : [])
     .filter((r) => !claimed.has(r.refId || ''))
     .map((r) => ({
       id: `auto-collector-${r.refId || 'none'}`,
@@ -314,9 +325,34 @@ export function ledgerSummary(data, month) {
       auto: true
     }));
 
+  // দোকান ভাড়া — "দোকান ভাড়া এন্ট্রি" পাতায় যা লেখা হয়, সেই মাসের (paidMonth)
+  // খতিয়ানে আদায়কারীভিত্তিক একটি সারি হয়ে নিজে থেকেই বসে; উপ-লাইনে
+  // দোকানওয়ারি ভাঙা। আদায়কারীদের সারির মতোই: হাতে লেখা/বদলানো সারি
+  // (source 'shop-rent', একই refId) থাকলে স্বয়ংক্রিয়টি আর বসে না — পুরোনো
+  // মাসগুলোর হাতে লেখা সারি এভাবেই অক্ষত থাকে, দ্বিগুণ হিসাব হয় না।
+  const claimedShop = new Set(
+    all.filter((e) => e.source === 'shop-rent').map((e) => e.refId || '')
+  );
+  const autoShop = shopRentLedgerRows(data, month)
+    .filter((r) => !claimedShop.has(r.refId || ''))
+    .map((r) => ({
+      id: `auto-shop-rent-${r.refId || 'none'}`,
+      month,
+      side: 'income',
+      serial: null,
+      title: r.title,
+      lines: r.lines,
+      amount: r.amount,
+      source: 'shop-rent',
+      refId: r.refId,
+      note: r.note,
+      auto: true
+    }));
+
   // কাগজে আদায়কারীদের সারিগুলো সবার উপরে থাকে, তাই আগে সেগুলোই
   const income = [
     ...auto,
+    ...autoShop,
     ...stored.sort((a, b) => (a.serial ?? 999) - (b.serial ?? 999))
   ];
   const expenseSorted = expense.sort((a, b) => (a.serial ?? 999) - (b.serial ?? 999));
@@ -334,6 +370,9 @@ export function ledgerSummary(data, month) {
     expense: expenseSorted,
     notes,
     autoCount: auto.length,
+    autoShopCount: autoShop.length,
+    // এই মাসে আদায়কারীদের স্বয়ংক্রিয় সারি ইচ্ছাকৃতভাবে বন্ধ (কাগজ থেকে তোলা হিসাব)
+    autoDisabled: !autoAllowed,
     storedCount,
     // খরচের একটিও সারি নেই অথচ আদায় আছে — মাসটি অসম্পূর্ণ
     incomplete: income.length > 0 && expenseSorted.length === 0,
@@ -412,4 +451,369 @@ export function carryoverRow(data, month) {
         amount: balance,
         title: `পূর্বের হিসাবের ক্যাশ (${U.monthLabelShort(prev)}) উদ্বৃত্ত`
       };
+}
+
+/* ==========================================================================
+   দোকান ভাড়া
+
+   দুই রকম মাস আছে, দুটোই দরকার:
+     rentMonth — কোন মাসের ভাড়া (ভাড়াটিয়ার হিসাব, বকেয়া এর উপর)
+     paidMonth — কোন মাসের খতিয়ানে টাকাটা জমা পড়ল (সমিতির ক্যাশের হিসাব)
+   যেমন অক্টোবর-২৫ এর খতিয়ানে ৩নং দোকানের মে-জুলাই তিন মাসের ভাড়া একসাথে
+   এসেছিল: rentMonth মে/জুন/জুলাই, paidMonth অক্টোবর।
+   ========================================================================== */
+
+export const SHOP_RENT_KINDS = [
+  { id: 'rent', label: 'ভাড়া' },
+  { id: 'electricity', label: 'বিদ্যুৎ বিল' },
+  { id: 'other', label: 'অন্যান্য / সমন্বয়' }
+];
+
+export function shopKindLabel(kind) {
+  const k = SHOP_RENT_KINDS.find((x) => x.id === kind);
+  return k ? k.label : kind;
+}
+
+/** দোকানের তালিকা ক্রমিক অনুযায়ী; includeInactive না দিলে কেবল চালু দোকান */
+export function shopsSorted(data, includeInactive = false) {
+  return (data.shops || [])
+    .filter((s) => includeInactive || s.active !== false)
+    .slice()
+    .sort((a, b) => (a.serial || 0) - (b.serial || 0));
+}
+
+/** কাগজে যেভাবে লেখা হয়: "১নং দোকান" */
+export function shopLabel(shop) {
+  if (!shop) return '';
+  return `${U.bnDigits(shop.shopNo)}নং দোকান`;
+}
+
+/** নির্দিষ্ট মাসে এই দোকানের ধার্য মাসিক ভাড়া (rentHistory থাকলে সেটিই অগ্রাধিকার) */
+export function shopRentForMonth(shop, month) {
+  const history = Array.isArray(shop.rentHistory) ? shop.rentHistory : [];
+  const idx = U.monthIndex(month);
+  let rate = null;
+  history
+    .slice()
+    .sort((a, b) => U.monthIndex(a.fromMonth) - U.monthIndex(b.fromMonth))
+    .forEach((h) => {
+      if (h.fromMonth && U.monthIndex(h.fromMonth) <= idx) rate = Number(h.rate) || 0;
+    });
+  return rate == null ? Number(shop.monthlyRent) || 0 : rate;
+}
+
+/** কোন মাস থেকে ভাড়া ধরা হবে */
+export function shopStartMonth(shop, settings) {
+  return shop.joinMonth || settings.startMonth || '2024-08';
+}
+
+/** কোন মাস পর্যন্ত ভাড়া ধরা হবে (closedFrom থাকলে তার আগের মাস) */
+export function shopEndMonth(shop, asOfMonth) {
+  if (shop.closedFrom && U.monthIndex(shop.closedFrom) <= U.monthIndex(asOfMonth)) {
+    return U.addMonths(shop.closedFrom, -1);
+  }
+  return asOfMonth;
+}
+
+export function shopIsChargeable(shop, settings, month) {
+  const i = U.monthIndex(month);
+  return (
+    i >= U.monthIndex(shopStartMonth(shop, settings)) &&
+    i <= U.monthIndex(shopEndMonth(shop, month))
+  );
+}
+
+/** শুরু থেকে asOfMonth পর্যন্ত মোট ধার্য ভাড়া */
+export function shopChargeUpTo(shop, settings, asOfMonth) {
+  const from = U.monthIndex(shopStartMonth(shop, settings));
+  const to = U.monthIndex(shopEndMonth(shop, asOfMonth));
+  let total = 0;
+  for (let i = from; i <= to; i += 1) total += shopRentForMonth(shop, U.indexToMonth(i));
+  return total;
+}
+
+/** একটি দোকানের সব আদায় */
+export function shopRentsOf(data, shopId) {
+  return (data.shopRents || []).filter((r) => r.shopId === shopId);
+}
+
+const sumAmt = (list) => list.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+
+/**
+ * একটি দোকানের নির্দিষ্ট মাস (rentMonth) পর্যন্ত পূর্ণ হিসাব।
+ * ভাড়ার বকেয়া = ধার্য ভাড়া − (ভাড়া + অন্যান্য/সমন্বয়)। বিদ্যুৎ বিল ভাড়ার
+ * হিসাবে ঢোকে না — সেটি আলাদা করে দেখানো হয়।
+ */
+export function shopStatus(data, shop, asOfMonth) {
+  const limit = U.monthIndex(asOfMonth);
+  const rents = shopRentsOf(data, shop.id).filter((r) => U.monthIndex(r.rentMonth) <= limit);
+  const charged = shopChargeUpTo(shop, data.settings, asOfMonth);
+  const paidRent = sumAmt(rents.filter((r) => r.kind === 'rent'));
+  const paidOther = sumAmt(rents.filter((r) => r.kind === 'other'));
+  const electricity = sumAmt(rents.filter((r) => r.kind === 'electricity'));
+  const balance = charged - paidRent - paidOther;
+  return {
+    shop,
+    charged,
+    paidRent,
+    paidOther,
+    paid: paidRent + paidOther,
+    electricity,
+    balance,
+    due: balance > 0 ? balance : 0,
+    advance: balance < 0 ? -balance : 0,
+    monthRate: shopRentForMonth(shop, asOfMonth)
+  };
+}
+
+/** একটি দোকানের মাসভিত্তিক লেজার (rentMonth ধরে), ফ্ল্যাটের ledger() এর অনুরূপ */
+export function shopLedger(data, shop, asOfMonth) {
+  const from = U.monthIndex(shopStartMonth(shop, data.settings));
+  const to = U.monthIndex(asOfMonth);
+  const rents = shopRentsOf(data, shop.id);
+  const rows = [];
+  let running = 0;
+  for (let i = from; i <= to; i += 1) {
+    const month = U.indexToMonth(i);
+    const charge = shopIsChargeable(shop, data.settings, month) ? shopRentForMonth(shop, month) : 0;
+    const inMonth = rents.filter((r) => r.rentMonth === month);
+    const rent = sumAmt(inMonth.filter((r) => r.kind === 'rent'));
+    const other = sumAmt(inMonth.filter((r) => r.kind === 'other'));
+    const electricity = sumAmt(inMonth.filter((r) => r.kind === 'electricity'));
+    running += charge - rent - other;
+    rows.push({
+      month,
+      label: U.monthLabel(month),
+      charge,
+      rent,
+      other,
+      electricity,
+      paid: rent + other,
+      items: inMonth,
+      collectorIds: Array.from(new Set(inMonth.map((r) => r.collectorId).filter(Boolean))),
+      paidMonths: Array.from(new Set(inMonth.map((r) => r.paidMonth).filter(Boolean))).sort(),
+      balance: running
+    });
+  }
+  return rows;
+}
+
+/**
+ * এক মাসের খতিয়ানে (paidMonth) দোকান ভাড়া খাতে কত উঠল, কোন কোন দোকান থেকে।
+ * এটিই "মাসভিত্তিক দোকান ভাড়া" রিপোর্টের মূল টেবিল।
+ */
+export function shopRentByPaidMonth(data, paidMonth) {
+  const inMonth = (data.shopRents || []).filter((r) => r.paidMonth === paidMonth);
+  const shops = shopsSorted(data, true);
+  const rows = shops
+    .map((shop) => {
+      const items = inMonth.filter((r) => r.shopId === shop.id);
+      if (!items.length) return null;
+      const rent = sumAmt(items.filter((r) => r.kind === 'rent'));
+      const electricity = sumAmt(items.filter((r) => r.kind === 'electricity'));
+      const other = sumAmt(items.filter((r) => r.kind === 'other'));
+      return {
+        shop,
+        items,
+        rent,
+        electricity,
+        other,
+        total: rent + electricity + other,
+        rentMonths: Array.from(
+          new Set(items.filter((r) => r.kind === 'rent').map((r) => r.rentMonth))
+        ).sort(),
+        collectorIds: Array.from(new Set(items.map((r) => r.collectorId).filter(Boolean))),
+        notes: items.map((r) => r.note).filter(Boolean)
+      };
+    })
+    .filter(Boolean);
+  const totals = rows.reduce(
+    (acc, r) => {
+      acc.rent += r.rent;
+      acc.electricity += r.electricity;
+      acc.other += r.other;
+      acc.total += r.total;
+      return acc;
+    },
+    { rent: 0, electricity: 0, other: 0, total: 0, shopCount: rows.length }
+  );
+  return { rows, totals };
+}
+
+/**
+ * পুরোনো কাগজের একত্রিত "দোকান ভাড়া ও বিবিধ আয়" — দোকানওয়ারি বা মাসওয়ারি
+ * ভাঙা নেই (যেমন আগস্ট-২৩ হতে জুলাই-২৪: ২০,৭০০)। সেটিংসে থাকে:
+ *   shopRentLegacy: [{ id, fromMonth, toMonth, amount, label }]
+ * রিপোর্টে আলাদা সারিতে দেখানো হয়, বকেয়ার হিসাবে ঢোকে না।
+ */
+export function shopRentLegacy(data) {
+  const list = Array.isArray(data.settings.shopRentLegacy) ? data.settings.shopRentLegacy : [];
+  return list
+    .filter((l) => l && Number(l.amount) > 0)
+    .map((l, i) => ({
+      id: l.id || `legacy-${i + 1}`,
+      fromMonth: l.fromMonth || '',
+      toMonth: l.toMonth || '',
+      amount: Number(l.amount) || 0,
+      label: l.label || 'দোকান ভাড়া ও বিবিধ আয় (পূর্বের হিসাব)'
+    }))
+    .sort((a, b) => U.monthIndex(a.fromMonth) - U.monthIndex(b.fromMonth));
+}
+
+/**
+ * যত মাসে (paidMonth) দোকান ভাড়া খাতে কিছু উঠেছে, নতুন থেকে পুরোনো ক্রমে —
+ * প্রতি মাসের দোকানওয়ারি ভাঙা ও যোগফল। "মাসভিত্তিক দোকান ভাড়া" পাতার মূল তালিকা।
+ */
+export function shopRentMonthlyList(data) {
+  // প্রথম জমার মাস থেকে চলতি মাস পর্যন্ত প্রতিটি মাস — যে মাসে কিছু ওঠেনি
+  // সেটিও তালিকায় থাকে (rows খালি), নইলে ফাঁকা মাসগুলো চোখে পড়ে না।
+  const paidMonths = (data.shopRents || []).map((r) => r.paidMonth).filter(Boolean);
+  if (!paidMonths.length) return { list: [], grand: { rent: 0, electricity: 0, other: 0, total: 0, monthCount: 0 } };
+  const from = Math.min(...paidMonths.map(U.monthIndex));
+  const to = Math.max(U.monthIndex(lastSelectableMonth(data)), ...paidMonths.map(U.monthIndex));
+  const months = [];
+  for (let i = to; i >= from; i -= 1) months.push(U.indexToMonth(i));
+  const list = months.map((month) => ({ month, ...shopRentByPaidMonth(data, month) }));
+  const grand = list.reduce(
+    (acc, m) => {
+      acc.rent += m.totals.rent;
+      acc.electricity += m.totals.electricity;
+      acc.other += m.totals.other;
+      acc.total += m.totals.total;
+      return acc;
+    },
+    { rent: 0, electricity: 0, other: 0, total: 0, monthCount: list.filter((m) => m.rows.length).length }
+  );
+  return { list, grand };
+}
+
+/**
+ * দোকান × মাস ছক (rentMonth ধরে) — কোন দোকানের কোন মাসের ভাড়া জমা পড়েছে,
+ * কোনটি বকেয়া, এক নজরে। শেষ কলামে toMonth পর্যন্ত মোট বকেয়া।
+ */
+export function shopRentMatrix(data, fromMonth, toMonth) {
+  const months = [];
+  for (let i = U.monthIndex(fromMonth); i <= U.monthIndex(toMonth); i += 1) {
+    months.push(U.indexToMonth(i));
+  }
+  const shops = shopsSorted(data, true);
+  const rows = shops.map((shop) => {
+    const rents = shopRentsOf(data, shop.id);
+    const cells = months.map((m) => {
+      const inMonth = rents.filter((r) => r.rentMonth === m);
+      const chargeable = shopIsChargeable(shop, data.settings, m);
+      return {
+        month: m,
+        chargeable,
+        charge: chargeable ? shopRentForMonth(shop, m) : 0,
+        rent: sumAmt(inMonth.filter((r) => r.kind === 'rent')),
+        electricity: sumAmt(inMonth.filter((r) => r.kind === 'electricity')),
+        other: sumAmt(inMonth.filter((r) => r.kind === 'other')),
+        paidMonths: Array.from(new Set(inMonth.map((r) => r.paidMonth).filter(Boolean))).sort()
+      };
+    });
+    return {
+      shop,
+      cells,
+      totals: cells.reduce(
+        (a, c) => ({
+          charge: a.charge + c.charge,
+          rent: a.rent + c.rent,
+          electricity: a.electricity + c.electricity,
+          other: a.other + c.other
+        }),
+        { charge: 0, rent: 0, electricity: 0, other: 0 }
+      ),
+      status: shopStatus(data, shop, toMonth)
+    };
+  });
+  const colTotals = months.map((m, i) =>
+    rows.reduce(
+      (a, r) => ({
+        month: m,
+        charge: a.charge + r.cells[i].charge,
+        rent: a.rent + r.cells[i].rent,
+        electricity: a.electricity + r.cells[i].electricity,
+        other: a.other + r.cells[i].other
+      }),
+      { month: m, charge: 0, rent: 0, electricity: 0, other: 0 }
+    )
+  );
+  return { months, rows, colTotals };
+}
+
+/**
+ * এক মাসের (paidMonth) দোকান ভাড়ার আদায় থেকে খতিয়ানের income সারি বানানো —
+ * আদায়কারী অনুযায়ী একটি করে সারি, উপ-লাইনে দোকান ও খাত অনুযায়ী ভাঙা।
+ * ledgerSummary এগুলো নিজে থেকেই জমার খাতায় বসায়।
+ */
+export function shopRentLedgerRows(data, paidMonth) {
+  const inMonth = (data.shopRents || []).filter(
+    (r) => r.paidMonth === paidMonth && Number(r.amount) > 0
+  );
+  if (!inMonth.length) return [];
+
+  const people = new Map(
+    (data.settings.collectors || []).map((c) => [
+      c.id,
+      { name: c.bn || c.en, honorific: (c.honorific || '').trim() }
+    ])
+  );
+  const shopById = new Map((data.shops || []).map((s) => [s.id, s]));
+  const shopOrder = (id) => (shopById.get(id) && shopById.get(id).serial) || 999;
+  const kindOrder = { rent: 0, electricity: 1, other: 2 };
+
+  const byCollector = new Map();
+  inMonth.forEach((r) => {
+    const key = r.collectorId || '';
+    if (!byCollector.has(key)) byCollector.set(key, []);
+    byCollector.get(key).push(r);
+  });
+
+  return Array.from(byCollector.entries()).map(([collectorId, items]) => {
+    // দোকান + খাত অনুযায়ী এক লাইনে — একই দোকানের একাধিক মাসের ভাড়া একসাথে
+    const groups = new Map();
+    items.forEach((r) => {
+      const gk = `${r.shopId}|${r.kind}`;
+      if (!groups.has(gk)) {
+        groups.set(gk, { shopId: r.shopId, kind: r.kind, months: [], amount: 0, notes: [] });
+      }
+      const g = groups.get(gk);
+      if (!g.months.includes(r.rentMonth)) g.months.push(r.rentMonth);
+      g.amount += Number(r.amount) || 0;
+      if (r.note) g.notes.push(r.note);
+    });
+
+    const lines = Array.from(groups.values())
+      .sort(
+        (a, b) =>
+          shopOrder(a.shopId) - shopOrder(b.shopId) || kindOrder[a.kind] - kindOrder[b.kind]
+      )
+      .map((g) => {
+        const shop = shopById.get(g.shopId);
+        const who = shop ? shopLabel(shop) : 'দোকান';
+        const monthsTxt = g.months.sort().map(U.monthLabelShort).join(', ');
+        // নোট থাকলে লাইনের শেষে — যেমন "৮ মাসের ভাড়া একত্রে"
+        const noteTxt = g.notes.length ? ` — ${g.notes.join('; ')}` : '';
+        let text;
+        if (g.kind === 'rent') text = `${who}ের ভাড়া (${monthsTxt}) আদায়${noteTxt}`;
+        else if (g.kind === 'electricity') text = `${who}ের বিদ্যুৎ বিল (${monthsTxt}) আদায়${noteTxt}`;
+        else text = g.notes.length ? g.notes.join('; ') : `${who} — অন্যান্য/সমন্বয় (${monthsTxt})`;
+        return { text, amount: g.amount };
+      });
+
+    const p = people.get(collectorId);
+    const who = p ? [p.honorific, p.name].filter(Boolean).join(' ') : '';
+    const shopCount = new Set(items.map((r) => r.shopId)).size;
+    return {
+      refId: collectorId,
+      collectorName: p ? p.name : '',
+      title: who
+        ? `${who} কর্তৃক দোকানের ভাড়া আদায়`
+        : 'দোকানের ভাড়া আদায় (আদায়কারী উল্লেখ নেই)',
+      lines,
+      amount: lines.reduce((s, l) => s + l.amount, 0),
+      note: `${U.bnDigits(shopCount)} টি দোকান`
+    };
+  });
 }

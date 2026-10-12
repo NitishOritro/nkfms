@@ -14,7 +14,8 @@ import {
   Inbox,
   TrendingUp,
   TrendingDown,
-  Minus
+  Minus,
+  Store
 } from 'lucide-react';
 
 export function DashboardView({ setCurrentTab }) {
@@ -23,6 +24,10 @@ export function DashboardView({ setCurrentTab }) {
 
   const { totals } = Calc.summary(data, selectedMonth);
   const collectorData = Calc.collectorBreakdown(data, selectedMonth);
+
+  // দোকান ভাড়া — এ মাসের হিসাবে (জমার মাস) কোন দোকান থেকে কত উঠল
+  const shopsReady = data.shopsReady !== false;
+  const shopMonth = Calc.shopRentByPaidMonth(data, selectedMonth);
 
   // গত মাসের সাথে তুলনা — নইলে মাসের শুরুতে "৳০ জমা / ০%" দেখে মনে হয়
   // সব ভেঙে পড়েছে, অথচ সেটাই স্বাভাবিক। তুলনা থাকলে প্রেক্ষাপট বোঝা যায়।
@@ -258,6 +263,74 @@ export function DashboardView({ setCurrentTab }) {
           </div>
         </div>
       </div>
+
+      {/* দোকান ভাড়া — এ মাসের হিসাবে */}
+      {shopsReady && (
+        <div className="card" style={{ marginTop: '18px' }}>
+          <div className="card-header">
+            <div className="card-title">
+              <Store size={18} color="var(--success)" />
+              <span>{U.monthLabel(selectedMonth)} — দোকান ভাড়া খাতে জমা</span>
+            </div>
+            <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--success)' }}>
+              {U.bnTaka(shopMonth.totals.total)}
+            </div>
+          </div>
+          <div className="card-body flush">
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '110px' }}>দোকান</th>
+                    <th>ভাড়াটিয়া</th>
+                    <th>কোন মাসের ভাড়া</th>
+                    <th className="amount">ভাড়া</th>
+                    <th className="amount">বিদ্যুৎ বিল</th>
+                    <th className="amount">মোট</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shopMonth.rows.length > 0 ? (
+                    shopMonth.rows.map((r) => (
+                      <tr key={r.shop.id}>
+                        <td><b>{Calc.shopLabel(r.shop)}</b></td>
+                        <td>{r.shop.tenantName || '—'}</td>
+                        <td style={{ fontSize: '12px' }}>{r.rentMonths.map(U.monthLabelShort).join(', ') || '—'}</td>
+                        <td className="amount">{r.rent ? U.bnTaka(r.rent) : '—'}</td>
+                        <td className="amount">{r.electricity ? U.bnTaka(r.electricity) : '—'}</td>
+                        <td className="amount" style={{ fontWeight: 700, color: 'var(--primary-dark)' }}>
+                          {U.bnTaka(r.total)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="6" className="empty-state">
+                        <div className="empty-state-icon">
+                          <Inbox size={24} />
+                        </div>
+                        <div className="empty-state-title">
+                          {U.monthLabel(selectedMonth)} মাসের হিসাবে দোকান ভাড়ার কোনো জমা নেই
+                        </div>
+                        {!isReadOnly && (
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => setCurrentTab('shop-rent')}
+                          >
+                            <ArrowRight size={16} />
+                            <span>দোকান ভাড়া এন্ট্রি</span>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -60,6 +60,8 @@ export function createLocalClient() {
     const api = {
       select(sel) { st.select = sel || '*'; return api; },
       eq(col, val) { st.filters.push([col, val]); return api; },
+      // .in(col, [..]) — দোকান ভাড়ার একাধিক সারি একসাথে মুছতে লাগে
+      in(col, vals) { st.filters.push([col, Array.isArray(vals) ? vals : [vals]]); return api; },
       order(col, opts) { st.order = { col, asc: !opts || opts.ascending !== false }; return api; },
       range() { return api; },
       single() { st.single = true; return api; },
@@ -82,7 +84,8 @@ export function createLocalClient() {
       }
       if (!Array.isArray(db[table])) db[table] = [];
       const rows = db[table];
-      const match = (r) => st.filters.every(([c, v]) => r[c] === v);
+      const match = (r) =>
+        st.filters.every(([c, v]) => (Array.isArray(v) ? v.includes(r[c]) : r[c] === v));
 
       if (st.op === 'select') {
         let out = rows.filter(match);

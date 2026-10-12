@@ -18,8 +18,9 @@ const EXPENSE_PRESETS = [
   'মেরামত ও সংস্কার'
 ];
 
+// "দোকানের ভাড়া আদায়" এখানে নেই — সেটি "দোকান ভাড়া এন্ট্রি" পাতা থেকে
+// নিজে থেকে বসে (source: 'shop-rent'); হাতে লিখলে দ্বিগুণ হিসাব হয়ে যেত।
 const INCOME_PRESETS = [
-  'দোকানের ভাড়া আদায়',
   'ভবনের কমন ফান্ড হতে গ্রহণ',
   'অন্যান্য আদায়'
 ];
@@ -298,7 +299,11 @@ function LedgerSide({ side, month, rows, total, isReadOnly, onEdit, onDelete, on
                         ? e.auto
                           ? `আদায়ের হিসাব থেকে নিজে বসেছে${e.note ? ' — ' + e.note : ''}`
                           : 'আদায়ের হিসাব থেকে (হাতে বদলানো)'
-                        : 'আগের মাস থেকে'}
+                        : e.source === 'shop-rent'
+                          ? e.auto
+                            ? `দোকান ভাড়া এন্ট্রি থেকে নিজে বসেছে${e.note ? ' — ' + e.note : ''}`
+                            : 'দোকান ভাড়ার সারি (হাতে লেখা)'
+                          : 'আগের মাস থেকে'}
                     </span>
                   )}
 
@@ -530,6 +535,18 @@ export function LedgerEntryView({ onOpenPrint }) {
                 <>
                   {' '}আদায়কারীদের <b>{U.bnDigits(summary.autoCount)}টি সারি</b> আদায়ের
                   হিসাব থেকে নিজে থেকেই বসে গেছে।
+                </>
+              )}
+              {summary.autoShopCount > 0 && (
+                <>
+                  {' '}দোকান ভাড়ার <b>{U.bnDigits(summary.autoShopCount)}টি সারি</b> দোকান
+                  ভাড়া এন্ট্রি থেকে নিজে থেকেই বসে গেছে।
+                </>
+              )}
+              {summary.autoDisabled && (
+                <>
+                  {' '}এই মাসের হিসাব কাগজ থেকে হুবহু তোলা — আদায়কারীদের সারি এখানে
+                  নিজে থেকে বসে না ({U.monthLabelShort(data.settings.ledgerAutoFromMonth)} থেকে বসে)।
                 </>
               )}
             </div>

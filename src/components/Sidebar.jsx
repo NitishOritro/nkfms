@@ -10,7 +10,7 @@ import {
   Settings,
   Printer,
   ClipboardList,
-  LogOut, Wallet } from 'lucide-react';
+  LogOut, Wallet, Store } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { LOGO_BASE64 } from '../assets/logoData';
@@ -26,7 +26,9 @@ const NAV_GROUPS = [
       { id: 'collection', label: 'মাসিক আদায় এন্ট্রি', icon: CalendarCheck, adminOnly: true },
       // adminOnly — ভিউ মোডে এই পেজটি মেনুতে দেখা যাবে না
       { id: 'flat-entry', label: 'একক ফ্ল্যাট এন্ট্রি (২৫ মাস)', icon: Layers, highlight: true, adminOnly: true },
-      { id: 'charge-form', label: 'সার্ভিস চার্জ এন্ট্রি ফর্ম', icon: ClipboardList, adminOnly: true }
+      { id: 'charge-form', label: 'সার্ভিস চার্জ এন্ট্রি ফর্ম', icon: ClipboardList, adminOnly: true },
+      // দোকান ভাড়ার এন্ট্রি — কেবল অ্যাডমিন; মাসভিত্তিক তালিকা নিচের দলে সবার জন্য
+      { id: 'shop-rent', label: 'দোকান ভাড়া এন্ট্রি', icon: Store, adminOnly: true }
     ]
   },
   {
@@ -35,6 +37,8 @@ const NAV_GROUPS = [
       { id: 'summary', label: 'মাসিক হিসাব সারসংক্ষেপ', icon: FileSpreadsheet },
       // ভিউ মোডে এন্ট্রির পাতা নয় — সেই মাসের জমা-খরচ তাঁরা রিপোর্টে দেখবেন
       { id: 'ledger', label: 'আয়-ব্যয় হিসাব', icon: Wallet, adminOnly: true },
+      // মাসভিত্তিক দোকান ভাড়া — প্রতি মাসে কোন দোকান থেকে কত উঠল; ভিউ মোডেও দেখা যায়
+      { id: 'shop-rent-monthly', label: 'মাসভিত্তিক দোকান ভাড়া', icon: Store },
       { id: 'defaulters', label: 'বকেয়া তালিকা', icon: AlertTriangle },
       { id: 'reports', label: 'প্রিন্ট ও PDF রিপোর্ট', icon: Printer }
     ]
