@@ -43,17 +43,45 @@
     display: none !important;
   }
 
+  /* পর্দায় html/body, .app-container, .main-content এর উচ্চতা ১০০vh ও
+     overflow: hidden, আর .page-body নিজের ভেতরে স্ক্রল করে — অ্যাপের
+     লেআউটের জন্য দরকার। কিন্তু ছাপায় এগুলো থাকলে প্রথম পাতার (এক
+     ভিউপোর্ট) পরের সব কনটেন্ট নিঃশব্দে কাটা পড়ে — প্রিন্ট প্রিভিউ
+     "1 page" দেখায়। তাই কাগজে সব মোড়ক খুলে দেওয়া হয়; যত পাতা লাগে
+     তত পাতায় ছাপে।                                                  */
+  html, body {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  #root {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
   .app-container {
     display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
   }
 
   .main-content {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
     margin: 0 !important;
     padding: 0 !important;
     width: 100% !important;
   }
 
   .page-body {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
     padding: 0 !important;
     max-width: 100% !important;
     margin: 0 !important;
@@ -609,6 +637,134 @@
     font-weight: 700 !important;
     color: #000 !important;
     letter-spacing: 0.2px !important;
+  }
+}
+
+/* ==========================================================================
+   মাসভিত্তিক বকেয়া লিস্ট — ফ্ল্যাটপ্রতি দুটি পাশাপাশি ছক, এক ফ্ল্যাটের
+   ব্লক পাতার মাঝে ভাঙবে না। সাধারণ print-table নিয়মে !important আছে,
+   তাই এখানেও তাই।
+   ========================================================================== */
+@media print {
+  .dues-list-intro,
+  .dues-chunk-caption {
+    color: #000 !important;
+  }
+  /* প্রতিটি পাতা আলাদা কাগজে, পাতার মাপে উঁচু — জলছাপ ঠিক মাঝে, স্বাক্ষর
+     ও QR তলায়। A4 (২৯৭mm) − মার্জিন (১৬mm) − শিটের প্যাডিং = ~২৭৫mm;
+     সামান্য কম রাখা, নইলে এক পিক্সেল উপচালেই ফাঁকা পাতা আসে। */
+  .dues-page {
+    position: relative !important;
+  }
+  .dues-page + .dues-page {
+    break-before: page !important;
+    page-break-before: always !important;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    border-top: 0 !important;
+  }
+  .dues-page-bottom {
+    margin-top: 8px !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  /* পাতার ভেতরের জলছাপ (পর্দার জন্য) কাগজে নয় — তার বদলে একটিই fixed
+     জলছাপ, যা ব্রাউজার প্রতিটি কাগজের ঠিক মাঝে আবার আঁকে। */
+  .dues-page .watermark-container {
+    display: none !important;
+  }
+  .watermark-container.dues-print-wm {
+    display: flex !important;
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: 80% !important;
+    height: auto !important;
+    aspect-ratio: 1 / 1 !important;
+    opacity: 0.12 !important;
+    z-index: 0 !important;
+    pointer-events: none !important;
+  }
+  .dues-chunk-caption {
+    margin-top: 4px !important;
+    font-size: 11px !important;
+  }
+  /* ২৭ মাস + ৬টি হিসাবের সারি + লেটারহেড + স্বাক্ষর + QR — সব এক পাতায়
+     ধরাতে সারিগুলো ঘন: ~৪mm প্রতি সারি */
+  table.tbl-dues-matrix th,
+  table.tbl-dues-matrix td {
+    font-size: 10px !important;
+    padding: 1.5px 3px !important;
+    line-height: 1.25 !important;
+  }
+  table.tbl-dues-matrix th {
+    padding: 2px 3px !important;
+  }
+  table.tbl-dues-matrix.is-dense th,
+  table.tbl-dues-matrix.is-dense td {
+    font-size: 9px !important;
+    padding: 1px 2px !important;
+  }
+  table.tbl-dues-matrix th.th-flat .nm {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    line-height: 1.3 !important;
+    color: #0f766e !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* ঘরের রং কাগজেও থাকবে — এগুলোই বকেয়া বোঝার চাবি */
+  .dues-list-intro .key.unpaid,
+  table.tbl-dues-matrix td.unpaid {
+    background: #fee2e2 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .dues-list-intro .key.partial,
+  table.tbl-dues-matrix td.partial {
+    background: #fef3c7 !important;
+    color: #92400e !important;
+    font-weight: 600 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .dues-list-intro .key.na,
+  table.tbl-dues-matrix td.na {
+    background: #e2e8f0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  table.tbl-dues-matrix tr.meta-row > td {
+    background: #f1f5f9 !important;
+    font-size: 9.5px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  table.tbl-dues-matrix tfoot tr.due-row > td {
+    background: #fef2f2 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  table.tbl-dues-matrix tfoot tr.range-row > td {
+    font-size: 8.5px !important;
+    font-weight: 600 !important;
+    color: #b91c1c !important;
+    line-height: 1.25 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  table.tbl-dues-summary td .due-amount {
+    font-size: 11px !important;
+  }
+  .dues-summary {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  table.tbl-dues-summary th,
+  table.tbl-dues-summary td {
+    font-size: 12px !important;
+    padding: 3px 5px !important;
   }
 }
 

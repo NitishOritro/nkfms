@@ -2,7 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../context/DataContext';
 import * as Calc from '../utils/calc';
 import * as U from '../utils/format';
-import { Printer, FileText, ChevronLeft, ChevronDown, Layers, Building2, Store } from 'lucide-react';
+import {
+  Printer, FileText, ChevronLeft, ChevronDown, Layers, Building2, Store,
+  ClipboardList, CheckSquare, Square
+} from 'lucide-react';
 import { Watermark } from '../components/Watermark';
 import { ResidentBadge } from '../components/ResidentBadge';
 import { MonthSelector } from '../components/MonthSelector';
@@ -14,7 +17,7 @@ const REPORT_LINK = 'https://nkfms-8c1a6.web.app/#/reports';
 
 // QR-এ রিপোর্টের পরিচয়ও থাকে: #/reports?rt=<ধরন>&rm=<মাস>&rf=<ফ্ল্যাট>।
 // স্ক্যান করলে ভিউ মোডে ঢুকে (AuthContext) ঠিক সেই রিপোর্টটিই খুলে যায়।
-const REPORT_TYPES = ['monthly', 'selective', 'cashbook', 'ledger', 'shop-rent'];
+const REPORT_TYPES = ['monthly', 'selective', 'dues-list', 'cashbook', 'ledger', 'shop-rent'];
 function readDeepLink() {
   const h = typeof window !== 'undefined' ? window.location.hash || '' : '';
   const qi = h.indexOf('?');
@@ -116,6 +119,18 @@ export function ReportView({
   const [deepSelectiveIds] = useState(() =>
     deep && deep.rt === 'selective' && deep.rf ? deep.rf.split(',') : null
   );
+
+  // ---- মাসভিত্তিক বকেয়া লিস্ট — কোন কোন ফ্ল্যাট ----
+  // null মানে "যাদের বকেয়া আছে সবাই"। বকেয়া পাতা থেকে বাছাই করে এলে বা
+  // QR-এ তালিকা থাকলে সেটিই বসে; এখানকার বাছাই-ঘর থেকেও বদলানো যায়।
+  const [duesListIds, setDuesListIds] = useState(() => {
+    if (deep && deep.rt === 'dues-list' && deep.rf) return deep.rf.split(',');
+    if (defaultReport === 'dues-list' && selectiveFlatIds && selectiveFlatIds.length) {
+      return selectiveFlatIds;
+    }
+    return null;
+  });
+  const [duesPickerOpen, setDuesPickerOpen] = useState(false);
 
   const s = data.settings;
   const monthShort = U.monthLabelShort(selectedMonth);
@@ -223,6 +238,95 @@ export function ReportView({
   if (!targetFlats.length) targetFlats = data.flats;
   const selectiveStatuses = targetFlats.map((f) => Calc.flatStatus(data, f, duesUpToMonth));
 
+  // ---- মাসভিত্তিক বকেয়া লিস্ট ----
+  // প্রতিটি নির্বাচিত ফ্ল্যাটের চার্জ শুরুর মাস থেকে নির্বাচিত মাস পর্যন্ত
+  // পুরো লেজার: কোন মাসে কত ধার্য, কত জমা, জের কত। কোনো বাছাই না থাকলে
+  // যাদের বকেয়া আছে তারা সবাই।
+  const allFlatsSorted = data.flats.slice().sort((a, b) => (a.serial || 0) - (b.serial || 0));
+  const duesCandidateIds = duesListIds
+    ? new Set(duesListIds)
+    : new Set(
+        allFlatsSorted
+          .filter((f) => Calc.flatStatus(data, f, duesUpToMonth).due > 0)
+          .map((f) => f.id)
+      );
+  const duesList = allFlatsSorted
+    .filter((f) => duesCandidateIds.has(f.id))
+    .map((f) => {
+      const rows = Calc.ledger(data, f, duesUpToMonth);
+      const status = Calc.flatStatus(data, f, duesUpToMonth);
+      // যেসব মাসের টাকা পুরো জমা পড়েনি — তার প্রথম ও শেষ মাস থেকেই
+      // "বকেয়া কোন মাস হতে কোন মাস পর্যন্ত" লেখা হয়
+      const unpaidRows = rows.filter((r) => r.month && r.charge > r.paid);
+      return {
+        flat: f,
+        rows,
+        status,
+        startMonth: Calc.flatStartMonth(f, data.settings),
+        monthCount: rows.filter((r) => r.month && r.charge > 0).length,
+        unpaidMonths: rows.filter((r) => r.charge > r.paid).length,
+        firstUnpaid: unpaidRows.length ? unpaidRows[0].month : null,
+        lastUnpaid: unpaidRows.length ? unpaidRows[unpaidRows.length - 1].month : null
+      };
+    });
+  // "অক্টোবর-২৫ হতে অক্টোবর-২৬" — বকেয়া না থাকলে '—'
+  const duesRangeLabel = (d, br = false) => {
+    if (!d.firstUnpaid) return '—';
+    if (d.firstUnpaid === d.lastUnpaid) return U.monthLabelShort(d.firstUnpaid);
+    return br ? (
+      <>
+        {U.monthLabelShort(d.firstUnpaid)} হতে<br />{U.monthLabelShort(d.lastUnpaid)}
+      </>
+    ) : `${U.monthLabelShort(d.firstUnpaid)} হতে ${U.monthLabelShort(d.lastUnpaid)}`;
+  };
+  const duesTotals = duesList.reduce(
+    (acc, d) => {
+      acc.charged += d.status.opening + d.status.charged;
+      acc.paid += d.status.paid;
+      acc.due += d.status.due;
+      acc.unpaidMonths += d.unpaidMonths;
+      return acc;
+    },
+    { charged: 0, paid: 0, due: 0, unpaidMonths: 0 }
+  );
+  // ছকের গঠন: মাস সারিতে, ফ্ল্যাট কলামে (দোকান ভাড়ার "খ" ছকের মতো)।
+  // মাসের সীমা: নির্বাচিতদের মধ্যে সবচেয়ে আগের চার্জ-শুরুর মাস থেকে
+  // নির্বাচিত মাস পর্যন্ত। ফ্ল্যাট বেশি হলে ১০টি করে আলাদা ছক — প্রতিটি
+  // নিজের পাতায়, যাতে A4 খাড়া পাতায় ঘরগুলো পড়ার মতো চওড়া থাকে।
+  const duesMonths = (() => {
+    if (!duesList.length) return [];
+    const fromIdx = Math.min(...duesList.map((d) => U.monthIndex(d.startMonth)));
+    const toIdx = U.monthIndex(duesUpToMonth);
+    const out = [];
+    for (let i = fromIdx; i <= toIdx; i += 1) out.push(U.indexToMonth(i));
+    return out;
+  })();
+  const duesHasOpening = duesList.some((d) => d.status.opening > 0);
+  const duesCols = duesList.map((d) => {
+    const byMonth = new Map(d.rows.filter((r) => r.month).map((r) => [r.month, r]));
+    const startIdx = U.monthIndex(d.startMonth);
+    return {
+      ...d,
+      cells: duesMonths.map((m) => {
+        const r = byMonth.get(m);
+        const idx = U.monthIndex(m);
+        const chargeable = idx >= startIdx && U.monthIndex(Calc.flatEndMonth(d.flat, m)) >= idx;
+        return { month: m, chargeable, charge: r ? r.charge : 0, paid: r ? r.paid : 0 };
+      })
+    };
+  });
+  const DUES_COLS_PER_PAGE = 10;
+  const duesChunks = [];
+  for (let i = 0; i < duesCols.length; i += DUES_COLS_PER_PAGE) {
+    duesChunks.push(duesCols.slice(i, i + DUES_COLS_PER_PAGE));
+  }
+  const duesPickerToggle = (id) => {
+    setDuesListIds((prev) => {
+      const cur = prev ? prev.slice() : Array.from(duesCandidateIds);
+      return cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+    });
+  };
+
   // হেডারের তারিখ = রিপোর্ট যতটুকু সময় ঢেকেছে তার শেষ দিন। লেজার ছাড়া
   // বাকি সব রিপোর্ট নির্বাচিত মাস পর্যন্ত, তাই তারিখও সেই মাসের শেষ দিন।
   const headDateMonth = reportType === 'ledger' ? ledgerMonth : selectedMonth;
@@ -293,6 +397,11 @@ export function ReportView({
       if (reportType === 'selective' && effSelectiveIds && targetFlats.length < data.flats.length) {
         q.set('rf', targetFlats.map((f) => f.id).join(','));
       }
+      // হাতে বাছাই করা তালিকা থাকলে QR-এও সেটি যায়; "সব বকেয়া" হলে নয় —
+      // তখন স্ক্যানের দিনের হালনাগাদ বকেয়াদারই দেখাবে
+      if (reportType === 'dues-list' && duesListIds && duesList.length) {
+        q.set('rf', duesList.map((d) => d.flat.id).join(','));
+      }
     }
     return REPORT_LINK + '?' + q.toString();
   })();
@@ -302,6 +411,76 @@ export function ReportView({
       .then(setQrDataUrl)
       .catch(() => {});
   }, [qrLink]);
+
+  // ---- প্রতিটি ছাপা পাতার সাধারণ অংশ ----
+  // মাসভিত্তিক বকেয়া লিস্ট একাধিক পাতায় ছাপে; প্রতিটি পাতা যেন নিজেই
+  // পূর্ণাঙ্গ হয় — লেটারহেড, মাঝে জলছাপ, স্বাক্ষর ও QR — তাই এই তিনটি
+  // অংশ আলাদা করে রাখা, এক পাতার রিপোর্টগুলোও এগুলোই ব্যবহার করে।
+  const headBlock = (
+    <div className="print-head">
+      <div className="head-logo">
+        <img src={LOGO_BASE64} alt="Logo" />
+        <div className="logo-label">NKFMS</div>
+      </div>
+      <div className="head-center">
+        <div className="society">{s.societyName}</div>
+        <div className="committee">{s.committeeName}</div>
+        <div className="title">
+          {reportType === 'monthly' && `সার্ভিস চার্জ জমা ও বকেয়া হিসাবায়ন সারসংক্ষেপ (${monthShort} পর্যন্ত)`}
+          {reportType === 'selective' && `ফ্ল্যাট মালিকদের বকেয়া সার্ভিস চার্জ বিবরণী (${U.monthLabel(duesUpToMonth)} পর্যন্ত)`}
+          {/* এক লাইনে রাখতে ছোট শিরোনাম — "ফ্ল্যাট মালিকদের" অংশটি বাদ,
+              ছকের কলামেই তো মালিকদের নাম */}
+          {reportType === 'dues-list' && (
+            <span style={{ whiteSpace: 'nowrap' }}>
+              {`মাসভিত্তিক সার্ভিস চার্জ জমা ও বকেয়া লিস্ট (${U.monthLabel(duesUpToMonth)} পর্যন্ত)`}
+            </span>
+          )}
+          {reportType === 'cashbook' && `সার্ভিস হিসাবায়ন সারসংক্ষেপ (${monthShort})`}
+          {reportType === 'ledger' && `ফ্ল্যাটভিত্তিক সার্ভিস চার্জ লেজার ও বকেয়া বিবরণী (${ledgerMonthLabel} পর্যন্ত)`}
+          {reportType === 'shop-rent' && `দোকান ভাড়া আদায় ও বকেয়া বিবরণী (${monthShort})`}
+        </div>
+      </div>
+      <div className="head-date">
+        তারিখ: {U.monthEndDateLabel(headDateMonth)}
+        {reportType === 'ledger' && ledgerFlat && (
+          <div style={{ fontSize: '10.5px', marginTop: '2px' }}>
+            ফ্ল্যাট: <b className="flat-no">{ledgerFlat.flatNo}</b>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const signsBlock = (
+    <div className="print-signs" style={{ marginTop: '30px' }}>
+      {(s.signatories || []).map((sig) => (
+        <div key={sig.id} className="s">
+          <div className="line"></div>
+          <div className="sd">স্বাক্ষরিত/-</div>
+          <div className="nm">{sig.name}</div>
+          <div className="dg">{sig.designation}</div>
+          <div className="dg">{s.committeeName}</div>
+        </div>
+      ))}
+    </div>
+  );
+
+  // ছাপা কাগজ থেকে সরাসরি অনলাইন রিপোর্টে যাওয়ার পথ
+  const footerLinkBlock = (
+    <div className="print-footer-link">
+      {qrDataUrl && <img className="qr" src={qrDataUrl} alt="QR কোড" title={qrLink} />}
+      <div className="txt">
+        <div className="t1">এই রিপোর্টটি সরাসরি অনলাইনে দেখতে QR কোডটি স্ক্যান করুন, অথবা ব্রাউজারে লিখুন:</div>
+        <div className="t2">{REPORT_LINK}</div>
+      </div>
+    </div>
+  );
+
+  // মাসভিত্তিক বকেয়া লিস্টের পাতাগুলো: ১০টি ফ্ল্যাটের প্রতিটি ছক এক পাতা,
+  // একাধিক ফ্ল্যাট হলে শেষে সারসংক্ষেপের পাতা
+  const duesPages = duesChunks.map((cols, i) => ({ kind: 'chunk', cols, index: i }));
+  if (duesList.length > 1) duesPages.push({ kind: 'summary' });
+  if (!duesPages.length) duesPages.push({ kind: 'empty' });
 
   return (
     <div className="page-body">
@@ -330,6 +509,12 @@ export function ReportView({
             className={`btn btn-sm ${reportType === 'selective' ? 'btn-primary' : 'btn-outline'}`}
           >
             বকেয়া বিবরণী রিপোর্ট
+          </button>
+          <button
+            onClick={() => setReportType('dues-list')}
+            className={`btn btn-sm ${reportType === 'dues-list' ? 'btn-primary' : 'btn-outline'}`}
+          >
+            <ClipboardList size={14} /> বকেয়া লিস্ট (মাসভিত্তিক)
           </button>
           <button
             onClick={() => setReportType('cashbook')}
@@ -401,6 +586,66 @@ export function ReportView({
         </div>
       </div>
 
+      {/* মাসভিত্তিক বকেয়া লিস্ট — কোন কোন ফ্ল্যাট ছাপা হবে তার বাছাই-ঘর।
+          বকেয়া পাতা থেকে বাছাই করে এলে সেটিই বসে থাকে; এখানেও যোগ-বাদ
+          করা যায়। কিছু না বাছলে যাদের বকেয়া আছে তারা সবাই।          */}
+      {reportType === 'dues-list' && (
+        <div className="card no-print dues-flat-picker">
+          <div className="dp-head">
+            <div className="dp-title">
+              <ClipboardList size={16} />
+              <span>
+                ফ্ল্যাট বাছাই: <b>{U.bnDigits(duesList.length)} টি</b> নির্বাচিত
+                {!duesListIds && <span className="dp-auto"> (যাদের বকেয়া আছে সবাই)</span>}
+              </span>
+            </div>
+            <div className="dp-actions">
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => setDuesListIds(null)}>
+                সব বকেয়াদার
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => setDuesListIds(allFlatsSorted.map((f) => f.id))}
+              >
+                সব ফ্ল্যাট
+              </button>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => setDuesListIds([])}>
+                সব বাদ
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setDuesPickerOpen((v) => !v)}
+              >
+                {duesPickerOpen ? 'তালিকা গুটান' : 'ফ্ল্যাট বাছুন'}
+              </button>
+            </div>
+          </div>
+          {duesPickerOpen && (
+            <div className="dp-grid">
+              {allFlatsSorted.map((f) => {
+                const on = duesCandidateIds.has(f.id);
+                const st = Calc.flatStatus(data, f, duesUpToMonth);
+                return (
+                  <button
+                    type="button"
+                    key={f.id}
+                    className={`dp-chip${on ? ' on' : ''}${st.due > 0 ? ' has-due' : ''}`}
+                    onClick={() => duesPickerToggle(f.id)}
+                  >
+                    {on ? <CheckSquare size={14} /> : <Square size={14} />}
+                    <span className="dp-flat">{f.flatNo}</span>
+                    <span className="dp-name">{f.ownerName}</span>
+                    {st.due > 0 && <span className="dp-due">{U.bnNumber(st.due)}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ফোনে রিপোর্ট পাশে সরিয়ে দেখতে হয় — সেটি জানিয়ে দেওয়া */}
       <div className="report-scroll-hint no-print">
         <span>↔</span>
@@ -442,35 +687,10 @@ export function ReportView({
           overflow: 'hidden'
         }}
       >
-        {/* Centered Watermark */}
-        <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />
-
-        {/* 3-Column Header */}
-        <div className="print-head">
-          <div className="head-logo">
-            <img src={LOGO_BASE64} alt="Logo" />
-            <div className="logo-label">NKFMS</div>
-          </div>
-          <div className="head-center">
-            <div className="society">{s.societyName}</div>
-            <div className="committee">{s.committeeName}</div>
-            <div className="title">
-              {reportType === 'monthly' && `সার্ভিস চার্জ জমা ও বকেয়া হিসাবায়ন সারসংক্ষেপ (${monthShort} পর্যন্ত)`}
-              {reportType === 'selective' && `ফ্ল্যাট মালিকদের বকেয়া সার্ভিস চার্জ বিবরণী (${U.monthLabel(duesUpToMonth)} পর্যন্ত)`}
-              {reportType === 'cashbook' && `সার্ভিস হিসাবায়ন সারসংক্ষেপ (${monthShort})`}
-              {reportType === 'ledger' && `ফ্ল্যাটভিত্তিক সার্ভিস চার্জ লেজার ও বকেয়া বিবরণী (${ledgerMonthLabel} পর্যন্ত)`}
-              {reportType === 'shop-rent' && `দোকান ভাড়া আদায় ও বকেয়া বিবরণী (${monthShort})`}
-            </div>
-          </div>
-          <div className="head-date">
-            তারিখ: {U.monthEndDateLabel(headDateMonth)}
-            {reportType === 'ledger' && ledgerFlat && (
-              <div style={{ fontSize: '10.5px', marginTop: '2px' }}>
-                ফ্ল্যাট: <b className="flat-no">{ledgerFlat.flatNo}</b>
-              </div>
-            )}
-          </div>
-        </div>
+        {/* Centered Watermark ও 3-Column Header — মাসভিত্তিক বকেয়া লিস্ট
+            ছাড়া সব রিপোর্টে শিটের উপরে একবার; ওই লিস্টে প্রতি পাতায় আলাদা */}
+        {reportType !== 'dues-list' && <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />}
+        {reportType !== 'dues-list' && headBlock}
 
         {/* REPORT 1: Monthly Summary */}
         {reportType === 'monthly' && (
@@ -775,6 +995,267 @@ export function ReportView({
           </>
         )}
 
+        {/* REPORT 2খ: মাসভিত্তিক বকেয়া লিস্ট — মাস সারিতে, নির্বাচিত ফ্ল্যাট
+            মালিকেরা কলামে। প্রতিটি ঘরে সেই মাসে সেই ফ্ল্যাটের জমা; জমা না
+            পড়লে লাল '-' ও লালচে ঘর, আংশিক হলে হলুদ, চার্জ প্রযোজ্য না হলে
+            ধূসর। নিচে ফ্ল্যাটওয়ারি মোট ধার্য, মোট জমা, বকেয়া ও অপরিশোধিত
+            মাস। ১০টির বেশি ফ্ল্যাট হলে ১০টি করে আলাদা ছক, আলাদা পাতায়। */}
+        {reportType === 'dues-list' && (
+          <>
+            {/* ছাপার জলছাপ — position: fixed, তাই ব্রাউজার প্রতিটি কাগজের
+                ঠিক মাঝে এটি আবার আঁকে। পর্দায় লুকানো; পর্দায় প্রতিটি
+                পাতার নিজের জলছাপ (নিচে, .dues-page-এর ভেতরে) দেখা যায়। */}
+            <div className="watermark-container dues-print-wm" aria-hidden="true">
+              <img className="watermark-img" src={LOGO_BASE64} alt="" />
+            </div>
+            {duesPages.map((page, pi) => {
+              const cols = page.cols || [];
+              const ci = page.index || 0;
+              const sum = (fn) => cols.reduce((t, c) => t + fn(c), 0);
+              return (
+                <div className="dues-page" key={pi}>
+                  <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />
+                  {headBlock}
+
+                  {pi === 0 && (
+                    <div className="dues-list-intro">
+                      নির্বাচিত ফ্ল্যাট: <b>{U.bnDigits(duesList.length)} টি</b>
+                      {duesMonths.length > 0 && (
+                        <>
+                          {' '}&nbsp;|&nbsp; {U.monthLabelShort(duesMonths[0])} হতে {U.monthLabelShort(duesUpToMonth)}{' '}
+                          (মোট {U.bnDigits(duesMonths.length)} মাস) — ঘরে সেই মাসের জমার টাকা
+                        </>
+                      )}
+                      &nbsp;|&nbsp; <span className="key unpaid">লাল '-'</span> = জমা পড়েনি,{' '}
+                      <span className="key partial">হলুদ</span> = আংশিক জমা,{' '}
+                      <span className="key na">ধূসর</span> = সে মাসে চার্জ প্রযোজ্য নয়
+                    </div>
+                  )}
+
+                  {page.kind === 'empty' && (
+                    <div className="print-note">
+                      <span className="print-note-tag">বি.দ্র.</span>
+                      <span>কোনো ফ্ল্যাট নির্বাচিত নেই। উপরের "ফ্ল্যাট বাছুন" থেকে ফ্ল্যাট বেছে নিন।</span>
+                    </div>
+                  )}
+
+                  {page.kind === 'chunk' && (
+                <div className="dues-chunk">
+                  {duesChunks.length > 1 && (
+                    <div className="dues-chunk-caption">
+                      ছক {U.bnDigits(ci + 1)}/{U.bnDigits(duesChunks.length)}: ফ্ল্যাট{' '}
+                      <b className="flat-no">{cols[0].flat.flatNo}</b> হতে{' '}
+                      <b className="flat-no">{cols[cols.length - 1].flat.flatNo}</b>
+                    </div>
+                  )}
+                  <table className={`print-table tbl-dues-matrix${duesMonths.length > 30 ? ' is-dense' : ''}`}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', width: '14%' }}>মাস</th>
+                        {cols.map((c) => (
+                          <th key={c.flat.id} className="th-flat">
+                            <span className="flat-no">{c.flat.flatNo}</span>
+                            <div className="nm">{c.flat.ownerName}</div>
+                          </th>
+                        ))}
+                        <th className="th-paid" style={{ width: '10%' }}>মোট<br />জমা</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="meta-row">
+                        <td style={{ textAlign: 'left' }}>সার্ভিস চার্জ গণনা শুরু</td>
+                        {cols.map((c) => (
+                          <td key={c.flat.id} style={{ textAlign: 'center' }}>
+                            {U.monthLabelShort(c.startMonth)}
+                          </td>
+                        ))}
+                        <td></td>
+                      </tr>
+                      {duesHasOpening && (
+                        <tr className="meta-row">
+                          <td style={{ textAlign: 'left' }}>প্রারম্ভিক বকেয়া</td>
+                          {cols.map((c) => (
+                            <td
+                              key={c.flat.id}
+                              className={c.status.opening > 0 ? 'unpaid' : undefined}
+                              style={{ textAlign: 'center' }}
+                            >
+                              {c.status.opening > 0
+                                ? <span className="due-amount">{U.bnNumber(c.status.opening)}</span>
+                                : ''}
+                            </td>
+                          ))}
+                          <td></td>
+                        </tr>
+                      )}
+                      {duesMonths.map((m, mi) => {
+                        const rowTotal = sum((c) => c.cells[mi].paid);
+                        return (
+                          <tr key={m}>
+                            <td style={{ textAlign: 'left' }}><b>{U.monthLabel(m)}</b></td>
+                            {cols.map((c) => {
+                              const cell = c.cells[mi];
+                              const blank = !cell.chargeable && !cell.paid;
+                              const cls = blank
+                                ? 'na'
+                                : cell.paid <= 0
+                                  ? 'unpaid'
+                                  : cell.paid < cell.charge
+                                    ? 'partial'
+                                    : 'col-paid';
+                              return (
+                                <td
+                                  key={c.flat.id}
+                                  className={cls}
+                                  style={{ textAlign: 'center' }}
+                                  title={cell.charge ? `ধার্য ${U.bnNumber(cell.charge)}` : undefined}
+                                >
+                                  {blank ? '' : cell.paid > 0 ? U.bnNumber(cell.paid) : DASH}
+                                </td>
+                              );
+                            })}
+                            <td className="col-paid" style={{ textAlign: 'right' }}>
+                              {rowTotal ? U.bnNumber(rowTotal) : DASH}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td className="col-charge" style={{ textAlign: 'left' }}>মোট ধার্য</td>
+                        {cols.map((c) => (
+                          <td key={c.flat.id} className="col-charge" style={{ textAlign: 'center' }}>
+                            {U.bnNumber(c.status.opening + c.status.charged)}
+                          </td>
+                        ))}
+                        <td className="col-charge" style={{ textAlign: 'right' }}>
+                          {U.bnNumber(sum((c) => c.status.opening + c.status.charged))}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="col-paid" style={{ textAlign: 'left' }}>মোট জমা</td>
+                        {cols.map((c) => (
+                          <td key={c.flat.id} className="col-paid" style={{ textAlign: 'center' }}>
+                            {U.bnNumber(c.status.paid)}
+                          </td>
+                        ))}
+                        <td className="col-paid" style={{ textAlign: 'right' }}>
+                          {U.bnNumber(sum((c) => c.status.paid))}
+                        </td>
+                      </tr>
+                      <tr className="due-row">
+                        <td style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>
+                          <span className="due-amount">বকেয়া<br />({monthShort} পর্যন্ত)</span>
+                        </td>
+                        {cols.map((c) => (
+                          <td key={c.flat.id} style={{ textAlign: 'center' }}>
+                            {c.status.due > 0
+                              ? <span className="due-amount">{U.bnNumber(c.status.due)}</span>
+                              : c.status.advance > 0
+                                ? <span className="advance-tag">অগ্রীম {U.bnNumber(c.status.advance)}</span>
+                                : '০'}
+                          </td>
+                        ))}
+                        <td style={{ textAlign: 'right' }}>
+                          <span className="due-amount">{U.bnNumber(sum((c) => c.status.due))}</span>
+                        </td>
+                      </tr>
+                      <tr className="range-row">
+                        <td style={{ textAlign: 'left' }}>বকেয়া যে মাস হতে<br />যে মাস পর্যন্ত</td>
+                        {cols.map((c) => (
+                          <td key={c.flat.id} style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            {duesRangeLabel(c, true)}
+                          </td>
+                        ))}
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                  )}
+
+            {page.kind === 'summary' && (
+              <div className="dues-summary">
+                <div className="dues-summary-title">নির্বাচিত ফ্ল্যাটসমূহের সারসংক্ষেপ</div>
+                <table className="print-table tbl-dues-summary">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '5%' }}>ক্রম</th>
+                      <th className="th-flat" style={{ width: '8%' }}>ফ্ল্যাট</th>
+                      <th style={{ width: '18%', textAlign: 'left' }}>মালিকের নাম</th>
+                      <th style={{ width: '13%' }}>সার্ভিস চার্জ<br />গণনা শুরু</th>
+                      <th className="th-due" style={{ width: '22%' }}>বকেয়া যে মাস হতে<br />যে মাস পর্যন্ত</th>
+                      <th className="th-charge" style={{ width: '11%', textAlign: 'right' }}>মোট ধার্য</th>
+                      <th className="th-paid" style={{ width: '11%', textAlign: 'right' }}>মোট জমা</th>
+                      <th className="th-due" style={{ width: '12%', textAlign: 'right' }}>বকেয়া</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {duesList.map((d, idx) => (
+                      <tr key={d.flat.id}>
+                        <td style={{ textAlign: 'center' }}>{U.bnDigits(idx + 1)}</td>
+                        <td style={{ textAlign: 'center' }}><b className="flat-no">{d.flat.flatNo}</b></td>
+                        <td style={{ textAlign: 'left' }}><b>{d.flat.ownerName}</b></td>
+                        <td style={{ textAlign: 'center' }}>{U.monthLabelShort(d.startMonth)}</td>
+                        <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          {d.firstUnpaid
+                            ? <span className="due-amount">{duesRangeLabel(d)}</span>
+                            : '—'}
+                        </td>
+                        <td className="col-charge" style={{ textAlign: 'right' }}>
+                          {U.bnNumber(d.status.opening + d.status.charged)}
+                        </td>
+                        <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(d.status.paid)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                          {d.status.due > 0
+                            ? <span className="due-amount">{U.bnNumber(d.status.due)}</span>
+                            : '০'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan="5" style={{ textAlign: 'right' }}>সর্বমোট</td>
+                      <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(duesTotals.charged)}</td>
+                      <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(duesTotals.paid)}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <span className="due-amount">{U.bnNumber(duesTotals.due)}</span>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+                  {/* পাতার নিচে: স্বাক্ষর, ফুটার ও QR — প্রতি পাতায় */}
+                  <div className="dues-page-bottom">
+                    {/* সভার সিদ্ধান্ত — কেবল এই বকেয়া লিস্টেই, প্রতিটি পাতার
+                        নিচে, স্বাক্ষরের আগে */}
+                    <div className="print-note print-note-sm dues-note">
+                      <span className="print-note-tag">বিশেষ দ্রষ্টব্য:</span>
+                      <span>
+                        গত ০৯ই অক্টোবর, ২০২৬ তারিখে জরুরী বিশেষ সভায় যৌথ মালিকানায় (০৭ জন) নির্মাণাধীন
+                        ফ্ল্যাট (A-9 ও C-9) এর জন্য প্রযোজ্য বকেয়া সার্ভিস চার্জ জুন-২০২৫ থেকে কার্যকর করা
+                        হবে বলে সিদ্ধান্ত গৃহীত হয়।
+                      </span>
+                    </div>
+                    {signsBlock}
+                    <div className="print-foot">
+                      নির্বাচিত ফ্ল্যাট: {U.bnDigits(duesList.length)} টি &nbsp;|&nbsp; সর্বমোট বকেয়া:{' '}
+                      {U.bnTaka(duesTotals.due)} ({U.monthLabel(duesUpToMonth)} পর্যন্ত) &nbsp;|&nbsp;
+                      পাতা {U.bnDigits(pi + 1)}/{U.bnDigits(duesPages.length)} &nbsp;|&nbsp;
+                      নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
+                    </div>
+                    {footerLinkBlock}
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
+
         {/* REPORT 3: Ledger Statement */}
         {reportType === 'ledger' && ledgerFlat && ledgerStatus && (
           <>
@@ -1020,14 +1501,9 @@ export function ReportView({
           </>
         )}
 
-        {/* সব রিপোর্টের নিচে: ছাপা কাগজ থেকে সরাসরি অনলাইন রিপোর্টে যাওয়ার পথ */}
-        <div className="print-footer-link">
-          {qrDataUrl && <img className="qr" src={qrDataUrl} alt="QR কোড" title={qrLink} />}
-          <div className="txt">
-            <div className="t1">এই রিপোর্টটি সরাসরি অনলাইনে দেখতে QR কোডটি স্ক্যান করুন, অথবা ব্রাউজারে লিখুন:</div>
-            <div className="t2">{REPORT_LINK}</div>
-          </div>
-        </div>
+        {/* সব রিপোর্টের নিচে: ছাপা কাগজ থেকে সরাসরি অনলাইন রিপোর্টে যাওয়ার পথ।
+            মাসভিত্তিক বকেয়া লিস্টে এটি প্রতি পাতায় আলাদা করে বসে। */}
+        {reportType !== 'dues-list' && footerLinkBlock}
       </div>
       </div>
     </div>

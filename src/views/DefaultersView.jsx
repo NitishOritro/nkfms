@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { useData } from '../context/DataContext';
 import * as Calc from '../utils/calc';
 import * as U from '../utils/format';
-import { AlertTriangle, Printer, CheckSquare, Square } from 'lucide-react';
+import { AlertTriangle, Printer, CheckSquare, Square, ClipboardList } from 'lucide-react';
 import { Pagination } from '../components/Pagination';
 import { Modal } from '../components/Modal';
 
-export function DefaultersView({ onOpenSelectivePrint }) {
+export function DefaultersView({ onOpenSelectivePrint, onOpenDuesList }) {
   const { data, selectedMonth } = useData();
   const [selectedIds, setSelectedIds] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -49,6 +49,15 @@ export function DefaultersView({ onOpenSelectivePrint }) {
     onOpenSelectivePrint(selectedIds);
   };
 
+  // নির্বাচিত ফ্ল্যাটগুলোর মাসভিত্তিক লিস্ট — কোন মাসে কত জমা, কত বকেয়া
+  const handleOpenDuesList = () => {
+    if (!selectedIds.length) {
+      alert('অন্তত একটি ফ্ল্যাট নির্বাচন করুন।');
+      return;
+    }
+    onOpenDuesList(selectedIds);
+  };
+
   return (
     <div className="page-body">
       <div
@@ -87,6 +96,16 @@ export function DefaultersView({ onOpenSelectivePrint }) {
           >
             <Printer size={15} />
             <span>নির্বাচিতদের বকেয়া রিপোর্ট প্রিন্ট</span>
+          </button>
+
+          <button
+            onClick={handleOpenDuesList}
+            disabled={!selectedIds.length}
+            className="btn btn-outline btn-sm"
+            title="নির্বাচিত ফ্ল্যাটগুলোর শুরু থেকে মাসভিত্তিক জমা ও বকেয়ার লিস্ট"
+          >
+            <ClipboardList size={15} />
+            <span>মাসভিত্তিক বকেয়া লিস্ট</span>
           </button>
         </div>
       </div>

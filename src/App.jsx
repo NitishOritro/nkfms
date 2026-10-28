@@ -158,6 +158,12 @@ export function App() {
     setCurrentTab('reports');
   };
 
+  // বকেয়া পাতা থেকে বাছাই করা ফ্ল্যাটগুলোর মাসভিত্তিক বকেয়া লিস্ট
+  const handleOpenDuesList = (flatIds) => {
+    setReportState({ type: 'dues-list', selectiveIds: flatIds });
+    setCurrentTab('reports');
+  };
+
   return (
     <div className="app-container">
       <LocalModeRibbon />
@@ -219,7 +225,12 @@ export function App() {
             }}
           />
         )}
-        {currentTab === 'defaulters' && <DefaultersView onOpenSelectivePrint={handleOpenSelectivePrint} />}
+        {currentTab === 'defaulters' && (
+          <DefaultersView
+            onOpenSelectivePrint={handleOpenSelectivePrint}
+            onOpenDuesList={handleOpenDuesList}
+          />
+        )}
         {currentTab === 'reports' && (
           <ReportView
             defaultReport={reportState.type}
