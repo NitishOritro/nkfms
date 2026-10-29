@@ -861,3 +861,24 @@
     height: 14mm !important;
   }
 }
+
+@media print {
+  /* জলছাপ কেন্দ্রে বসাতে আগে top:50% + translate(-50%,-50%) ছিল। ছাপার
+     সময় ব্রাউজার পাতা ভাগ করে ট্রান্সফর্মের *আগের* বাক্স ধরে — সেটি শিটের
+     ১৩৫ মিমি থেকে ২৯০ মিমি পর্যন্ত, A4-এর সীমা (২৮১ মিমি) ছাড়িয়ে যায়,
+     ফলে কেবল জলছাপের জন্য একটি ফাঁকা দ্বিতীয় পাতা তৈরি হত। এখন চার দিকে
+     inset 0 + margin:auto — ট্রান্সফর্ম ছাড়াই কেন্দ্রে, বাক্সটি শিটের
+     ভেতরেই থাকে। মাসভিত্তিক বকেয়া লিস্টের fixed জলছাপ (dues-print-wm)
+     আলাদা নিয়মে, এর আওতায় নয়।                                        */
+  .watermark-container:not(.dues-print-wm) {
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    margin: auto !important;
+    transform: none !important;
+    width: 150mm !important;
+    height: 150mm !important;
+    aspect-ratio: auto !important;
+  }
+}
