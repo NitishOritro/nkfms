@@ -839,3 +839,25 @@
     print-color-adjust: exact !important;
   }
 }
+
+@media print {
+  /* মাসিক সারসংক্ষেপ (২৭ ফ্ল্যাট) — QR ব্লকসহ এক পাতায় ধরাতে সারি একটু চাপা,
+     নিচের স্বাক্ষর/ফুটার/QR-এর ফাঁকও কম। অন্য রিপোর্টে প্রভাব নেই।     */
+  table.tbl-monthly th,
+  table.tbl-monthly td {
+    padding: 1.5px 6px !important;
+    font-size: 12.5px !important;
+    line-height: 1.3 !important;
+  }
+  .print-sheet:has(table.tbl-monthly) .print-totals { margin-top: 6px !important; }
+  .print-sheet:has(table.tbl-monthly) .print-signs { margin-top: 12px !important; }
+  .print-sheet:has(table.tbl-monthly) .print-foot { margin-top: 8px !important; }
+  .print-sheet:has(table.tbl-monthly) .print-footer-link {
+    margin-top: 6px !important;
+    padding-top: 4px !important;
+  }
+  .print-sheet:has(table.tbl-monthly) .print-footer-link .qr {
+    width: 14mm !important;
+    height: 14mm !important;
+  }
+}
