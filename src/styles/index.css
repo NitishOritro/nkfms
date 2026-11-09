@@ -3684,3 +3684,12 @@ table.tbl-shop-matrix th.sub { font-size: 9px; font-weight: 600; padding: 1.5px 
 /* দোকান ভাড়ার ছকে প্রতিটি দোকানের কলাম-গ্রুপ (ভাড়া + বিদ্যুৎ বিল) ও
    "মোট জমা" কলামের বাঁ পাশে মোটা কমলা দাগ — কোন ঘর কোন দোকানের, এক নজরে */
 table.tbl-shop-matrix .grp { border-left: 2.5px solid #ea580c; }
+
+/* দোকান ভাড়া বিবরণী — পর্দায় দুই পাতা একটির নিচে আরেকটি, মাঝে বিভাজক */
+.shop-page { position: relative; }
+.shop-page + .shop-page { margin-top: 22px; padding-top: 18px; border-top: 2px dashed #cbd5e1; }
+.shop-page-title { font-size: 13px; font-weight: 700; margin: 8px 0 6px; color: #1e293b; }
+table.tbl-shop-summary th, table.tbl-shop-summary td,
+table.tbl-shop-deposit th, table.tbl-shop-deposit td,
+table.tbl-shop-ledger th, table.tbl-shop-ledger td { font-size: 11px; padding: 3px 6px; }
+table.tbl-shop-ledger tr.vacant-row > td { background: #f8fafc; color: #64748b; }

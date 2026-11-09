@@ -196,6 +196,10 @@ export function App() {
               setReportState({ type: 'shop-rent', selectiveIds: null });
               setCurrentTab('reports');
             }}
+            onOpenShopLedger={(shopId) => {
+              setReportState({ type: 'shop-ledger', selectiveIds: null, shopId });
+              setCurrentTab('reports');
+            }}
           />
         )}
         {/* মাসভিত্তিক দোকান ভাড়া — ভিউ মোডেও দেখা যায় */}
@@ -235,6 +239,7 @@ export function App() {
           <ReportView
             defaultReport={reportState.type}
             selectiveFlatIds={reportState.selectiveIds}
+            defaultShopId={reportState.shopId || null}
             autoPrint={reportState.autoPrint}
             onAutoPrintDone={() => setReportState((p) => ({ ...p, autoPrint: false }))}
           />

@@ -17,7 +17,7 @@ const REPORT_LINK = 'https://nkfms-8c1a6.web.app/#/reports';
 
 // QR-এ রিপোর্টের পরিচয়ও থাকে: #/reports?rt=<ধরন>&rm=<মাস>&rf=<ফ্ল্যাট>।
 // স্ক্যান করলে ভিউ মোডে ঢুকে (AuthContext) ঠিক সেই রিপোর্টটিই খুলে যায়।
-const REPORT_TYPES = ['monthly', 'selective', 'dues-list', 'cashbook', 'ledger', 'shop-rent'];
+const REPORT_TYPES = ['monthly', 'selective', 'dues-list', 'cashbook', 'ledger', 'shop-rent', 'shop-ledger'];
 function readDeepLink() {
   const h = typeof window !== 'undefined' ? window.location.hash || '' : '';
   const qi = h.indexOf('?');
@@ -26,7 +26,8 @@ function readDeepLink() {
   return {
     rt: REPORT_TYPES.includes(p.get('rt')) ? p.get('rt') : null,
     rm: /^[0-9]{4}-[0-9]{2}$/.test(p.get('rm') || '') ? p.get('rm') : null,
-    rf: p.get('rf') || null
+    rf: p.get('rf') || null,
+    rs: p.get('rs') || null   // দোকানভিত্তিক খতিয়ানে কোন দোকান
   };
 }
 
@@ -101,6 +102,7 @@ const CASHBOOK_BLANK = [
 export function ReportView({
   defaultReport = 'monthly',
   selectiveFlatIds = null,
+  defaultShopId = null,
   autoPrint = false,
   onAutoPrintDone
 }) {
@@ -115,6 +117,11 @@ export function ReportView({
   const [selectedLedgerFlatId, setSelectedLedgerFlatId] = useState(
     (deep && deep.rt === 'ledger' && deep.rf) || data.flats[0]?.id || ''
   );
+  // দোকানভিত্তিক খতিয়ান — কোন দোকান (QR, দোকানের পাতা থেকে এলে, নইলে প্রথমটি)
+  const [selectedShopId, setSelectedShopId] = useState(
+    (deep && deep.rt === 'shop-ledger' && deep.rs) || defaultShopId || ''
+  );
+  useEffect(() => { if (defaultShopId) setSelectedShopId(defaultShopId); }, [defaultShopId]);
   // বকেয়া বিবরণীর QR-এ বাছাই করা ফ্ল্যাটের তালিকাও থাকে (rf=fA-1,fB-2…)
   const [deepSelectiveIds] = useState(() =>
     deep && deep.rt === 'selective' && deep.rf ? deep.rf.split(',') : null
@@ -378,6 +385,46 @@ export function ReportView({
   const shopGridTotal = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.rent + r.totals.other + r.totals.adjust, 0) + shopGridElec;
   // অ্যাডভান্স (জামানত) — সমিতির কাছে ভাড়াটিয়াদের জমা
   const shopDepositTot = Calc.shopDepositTotals(data, selectedMonth);
+
+  // ২য় পাতা: দোকানওয়ারি হিসাব — ভাড়াটিয়া ও সময়কাল, ধার্য, জমা, অ্যাডভান্স সমন্বয়,
+  // বকেয়া, বিদ্যুৎ, ফাঁকা মাস; অ্যাডভান্স খাতা ভাড়াটিয়াওয়ারি। সব নির্বাচিত মাস পর্যন্ত।
+  const shopSummaryRows = Calc.shopsSorted(data, true).map((shop) => {
+    const tenancies = Calc.shopTenancies(shop);
+    return {
+      shop,
+      tenancies,
+      status: Calc.shopStatus(data, shop, selectedMonth),
+      vacant: Calc.shopVacantMonths(shop, s, selectedMonth),
+      deposits: tenancies.length
+        ? Calc.shopDepositByTenancy(data, shop, selectedMonth)
+        : [{ tenancy: null, ...Calc.shopDeposit(data, shop, selectedMonth) }]
+    };
+  });
+  const shopSumTot = shopSummaryRows.reduce(
+    (a, r) => ({
+      charged: a.charged + r.status.charged,
+      cash: a.cash + r.status.paidRent + r.status.paidOther,
+      adjust: a.adjust + r.status.paidAdjust,
+      due: a.due + r.status.due,
+      advance: a.advance + r.status.advance,
+      electricity: a.electricity + r.status.electricity
+    }),
+    { charged: 0, cash: 0, adjust: 0, due: 0, advance: 0, electricity: 0 }
+  );
+  // অ্যাডভান্সের সারি — যেখানে কিছু আছে (গ্রহণ/সমন্বয়/ফেরত/চুক্তি) কেবল সেগুলো
+  const shopDepositRows = shopSummaryRows.flatMap((r) =>
+    r.deposits
+      .filter((d) => d.received || d.adjusted || d.refunded || d.agreed)
+      .map((d) => ({ shop: r.shop, ...d }))
+  );
+
+  // ---- দোকানভিত্তিক খতিয়ান (একটি দোকান, মাসওয়ারি) ----
+  const shopsAll = Calc.shopsSorted(data, true);
+  const shopLedgerShop = shopsAll.find((x) => x.id === selectedShopId) || shopsAll[0] || null;
+  const shopLedgerRows = shopLedgerShop ? Calc.shopLedger(data, shopLedgerShop, selectedMonth) : [];
+  const shopLedgerStatus = shopLedgerShop ? Calc.shopStatus(data, shopLedgerShop, selectedMonth) : null;
+  const shopLedgerDeposit = shopLedgerShop ? Calc.shopDeposit(data, shopLedgerShop, selectedMonth) : null;
+  const shopLedgerTenancies = shopLedgerShop ? Calc.shopTenancies(shopLedgerShop) : [];
   // পুরোনো কাগজের একত্রিত "দোকান ভাড়া ও বিবিধ আয়" (সেটিংসে shopRentLegacy)
   const shopLegacy = Calc.shopRentLegacy(data);
   const shopLegacyTotal = shopLegacy.reduce((s2, l) => s2 + l.amount, 0);
@@ -398,6 +445,7 @@ export function ReportView({
       if (ledgerFlat) q.set('rf', ledgerFlat.id);
     } else {
       q.set('rm', selectedMonth);
+      if (reportType === 'shop-ledger' && shopLedgerShop) q.set('rs', shopLedgerShop.id);
       if (reportType === 'selective' && effSelectiveIds && targetFlats.length < data.flats.length) {
         q.set('rf', targetFlats.map((f) => f.id).join(','));
       }
@@ -442,6 +490,7 @@ export function ReportView({
           {reportType === 'cashbook' && `সার্ভিস হিসাবায়ন সারসংক্ষেপ (${monthShort})`}
           {reportType === 'ledger' && `ফ্ল্যাটভিত্তিক সার্ভিস চার্জ লেজার ও বকেয়া বিবরণী (${ledgerMonthLabel} পর্যন্ত)`}
           {reportType === 'shop-rent' && `দোকান ভাড়া আদায় ও বকেয়া বিবরণী (${monthShort})`}
+          {reportType === 'shop-ledger' && `দোকানভিত্তিক ভাড়ার লেজার ও বকেয়া বিবরণী (${monthShort} পর্যন্ত)`}
         </div>
       </div>
       <div className="head-date">
@@ -449,6 +498,11 @@ export function ReportView({
         {reportType === 'ledger' && ledgerFlat && (
           <div style={{ fontSize: '10.5px', marginTop: '2px' }}>
             ফ্ল্যাট: <b className="flat-no">{ledgerFlat.flatNo}</b>
+          </div>
+        )}
+        {reportType === 'shop-ledger' && shopLedgerShop && (
+          <div style={{ fontSize: '10.5px', marginTop: '2px' }}>
+            <b className="flat-no">{Calc.shopLabel(shopLedgerShop)}</b>
           </div>
         )}
       </div>
@@ -538,6 +592,39 @@ export function ReportView({
           >
             <Store size={14} /> দোকান ভাড়া বিবরণী
           </button>
+          <button
+            onClick={() => setReportType('shop-ledger')}
+            className={`btn btn-sm ${reportType === 'shop-ledger' ? 'btn-primary' : 'btn-outline'}`}
+          >
+            <Store size={14} /> দোকানভিত্তিক খতিয়ান
+          </button>
+
+          {/* দোকান বাছাই — ফ্ল্যাট লেজারের ঘরটির মতোই, বোতামের গায়ে */}
+          {reportType === 'shop-ledger' && (
+            <div className="ledger-flat-picker">
+              <span className="picker-icon" aria-hidden="true">
+                <Store size={15} />
+              </span>
+              <label htmlFor="ledger-shop">দোকান সিলেক্ট করুন</label>
+              <div className="picker-select">
+                <select
+                  id="ledger-shop"
+                  value={shopLedgerShop ? shopLedgerShop.id : ''}
+                  onChange={(e) => setSelectedShopId(e.target.value)}
+                >
+                  {shopsAll.map((sh) => (
+                    <option key={sh.id} value={sh.id}>
+                      {Calc.shopLabel(sh)}{Calc.shopTenantName(sh) ? ` — ${Calc.shopTenantName(sh)}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={15} className="picker-chevron" aria-hidden="true" />
+              </div>
+              <span className="picker-count" title="মোট দোকান">
+                {U.bnDigits(shopsAll.length)}টি
+              </span>
+            </div>
+          )}
 
           {/* ফ্ল্যাট বাছাইয়ের ঘরটি আগে ডান কোণে প্রিন্ট বোতামের পাশে ছিল,
               চোখে পড়ত না। লেজার বোতামের ঠিক পাশে আনা হলো — যে বোতামটি
@@ -693,8 +780,9 @@ export function ReportView({
       >
         {/* Centered Watermark ও 3-Column Header — মাসভিত্তিক বকেয়া লিস্ট
             ছাড়া সব রিপোর্টে শিটের উপরে একবার; ওই লিস্টে প্রতি পাতায় আলাদা */}
-        {reportType !== 'dues-list' && <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />}
-        {reportType !== 'dues-list' && headBlock}
+        {/* দোকান ভাড়া বিবরণী দুই পাতার — জলছাপ ও শিরোনাম পাতার ভেতরে বসে */}
+        {reportType !== 'dues-list' && reportType !== 'shop-rent' && <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />}
+        {reportType !== 'dues-list' && reportType !== 'shop-rent' && headBlock}
 
         {/* REPORT 1: Monthly Summary */}
         {reportType === 'monthly' && (
@@ -1353,6 +1441,10 @@ export function ReportView({
         {/* REPORT 5: দোকান ভাড়া — মাসভিত্তিক, দোকানওয়ারি */}
         {reportType === 'shop-rent' && (
           <>
+            {/* ---- ১ম পাতা: মাস × দোকান ছক ---- */}
+            <div className="shop-page is-first">
+            <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />
+            {headBlock}
             <div className="shop-report-caption">
               দোকানওয়ারি ভাড়া জমার ছক — {U.monthLabelShort(shopMatrixFrom)} হতে {monthShort} (ভাড়ার মাস অনুযায়ী)
             </div>
@@ -1503,6 +1595,164 @@ export function ReportView({
                 {shopLegacy.length > 0 && (
                   <> উপরের ধূসর সারিগুলো পুরোনো কাগজের একত্রিত হিসাব — দোকানওয়ারি ভাঙা নেই, বকেয়ার হিসাবেও ধরা হয়নি।</>
                 )}
+                {' '}দোকানওয়ারি ভাড়াটিয়া, বকেয়া ও অ্যাডভান্সের হিসাব পরের পাতায়।
+              </span>
+            </div>
+            </div>{/* /১ম পাতা */}
+
+            {/* ---- ২য় পাতা: দোকানওয়ারি হিসাব, অ্যাডভান্স, স্বাক্ষর ---- */}
+            <div className="shop-page">
+            <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />
+            <div className="shop-page-title">
+              ক. দোকানওয়ারি হিসাব সারসংক্ষেপ — {monthShort} পর্যন্ত (ভাড়াটিয়া, ধার্য, জমা, বকেয়া)
+            </div>
+            <table className="print-table tbl-shop-summary">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', width: '9%' }}>দোকান</th>
+                  <th style={{ textAlign: 'left' }}>ভাড়াটিয়া ও সময়কাল</th>
+                  <th className="th-charge" style={{ width: '9%' }}>মাসিক<br />ভাড়া</th>
+                  <th className="th-charge" style={{ width: '10%' }}>মোট ধার্য</th>
+                  <th className="th-paid" style={{ width: '10%' }}>নগদ জমা</th>
+                  <th className="th-paid" style={{ width: '9%' }}>অ্যাডভান্স<br />সমন্বয়</th>
+                  <th className="th-due" style={{ width: '10%' }}>বকেয়া ভাড়া</th>
+                  <th style={{ width: '9%' }}>বিদ্যুৎ বিল<br />আদায়</th>
+                  <th style={{ width: '16%' }}>ফাঁকা মাস</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shopSummaryRows.map(({ shop, status, tenancies, vacant }) => (
+                  <tr key={shop.id}>
+                    <td style={{ textAlign: 'left' }}><b>{Calc.shopLabel(shop)}</b></td>
+                    <td style={{ textAlign: 'left', fontSize: '9.5px' }}>
+                      {tenancies.length ? tenancies.map((t) => (
+                        <div key={t.id}>
+                          {t.tenantName || 'নামহীন'} — {U.monthLabelShort(t.fromMonth)} হতে {t.toMonth ? U.monthLabelShort(t.toMonth) : 'চলছে'}
+                          {Number(t.rent) > 0 ? ` (${U.bnNumber(t.rent)}/মাস)` : ''}
+                        </div>
+                      )) : (
+                        <div>
+                          {shop.tenantName || 'নাম নেই'} — {U.monthLabelShort(Calc.shopStartMonth(shop, s))} হতে{' '}
+                          {shop.closedFrom ? U.monthLabelShort(U.addMonths(shop.closedFrom, -1)) : 'চলছে'}
+                        </div>
+                      )}
+                    </td>
+                    <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(status.monthRate)}</td>
+                    <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(status.charged)}</td>
+                    <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(status.paidRent + status.paidOther)}</td>
+                    <td style={{ textAlign: 'right' }}>{status.paidAdjust ? U.bnNumber(status.paidAdjust) : DASH}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                      {status.due > 0
+                        ? <span className="due-amount">{U.bnNumber(status.due)}</span>
+                        : status.advance > 0 ? `অগ্রীম ${U.bnNumber(status.advance)}` : 'নেই'}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>{status.electricity ? U.bnNumber(status.electricity) : DASH}</td>
+                    <td style={{ textAlign: 'left', fontSize: '9px' }}>
+                      {vacant.length ? `${U.bnDigits(vacant.length)} মাস: ${vacant.map(U.monthLabelShort).join(', ')}` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={3} style={{ textAlign: 'right' }}>সর্বমোট</td>
+                  <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(shopSumTot.charged)}</td>
+                  <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopSumTot.cash)}</td>
+                  <td style={{ textAlign: 'right' }}>{shopSumTot.adjust ? U.bnNumber(shopSumTot.adjust) : DASH}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    {shopSumTot.due > 0 ? <span className="due-amount">{U.bnNumber(shopSumTot.due)}</span> : 'নেই'}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>{U.bnNumber(shopSumTot.electricity)}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+
+            <div className="shop-page-title">খ. অ্যাডভান্স (জামানত) হিসাব — ভাড়াটিয়াওয়ারি, {monthShort} পর্যন্ত</div>
+            <table className="print-table tbl-shop-deposit">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', width: '9%' }}>দোকান</th>
+                  <th style={{ textAlign: 'left' }}>ভাড়াটিয়া</th>
+                  <th style={{ width: '12%' }}>চুক্তির<br />অ্যাডভান্স</th>
+                  <th className="th-paid" style={{ width: '12%' }}>গ্রহণ</th>
+                  <th style={{ width: '12%' }}>ভাড়ায়<br />সমন্বয়</th>
+                  <th style={{ width: '11%' }}>ফেরত</th>
+                  <th className="th-due" style={{ width: '12%' }}>জমা আছে</th>
+                  <th style={{ width: '14%' }}>মন্তব্য</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shopDepositRows.length ? shopDepositRows.map((d, i) => (
+                  <tr key={`${d.shop.id}-${d.tenancy ? d.tenancy.id : i}`}>
+                    <td style={{ textAlign: 'left' }}><b>{Calc.shopLabel(d.shop)}</b></td>
+                    <td style={{ textAlign: 'left', fontSize: '9.5px' }}>
+                      {d.tenancy
+                        ? <>{d.tenancy.tenantName || 'নামহীন'} ({U.monthLabelShort(d.tenancy.fromMonth)} হতে {d.tenancy.toMonth ? U.monthLabelShort(d.tenancy.toMonth) : 'চলছে'})</>
+                        : (d.shop.tenantName || '—')}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>{d.agreed ? U.bnNumber(d.agreed) : DASH}</td>
+                    <td className="col-paid" style={{ textAlign: 'right' }}>{d.received ? U.bnNumber(d.received) : DASH}</td>
+                    <td style={{ textAlign: 'right' }}>{d.adjusted ? U.bnNumber(d.adjusted) : DASH}</td>
+                    <td style={{ textAlign: 'right' }}>{d.refunded ? U.bnNumber(d.refunded) : DASH}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                      <span className={d.tenancy && d.tenancy.toMonth && d.balance > 0 ? 'due-amount' : undefined}>{U.bnNumber(d.balance)}</span>
+                    </td>
+                    <td style={{ textAlign: 'left', fontSize: '9px' }}>
+                      {d.tenancy && d.tenancy.toMonth && d.balance > 0 ? 'ছেড়ে গেছেন — ফেরত বাকি' : (d.tenancy ? d.tenancy.note : d.shop.advanceNote) || ''}
+                      {d.monthlyAdjust > 0 ? ` মাসে ${U.bnNumber(d.monthlyAdjust)} কাটা` : ''}
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: '8px', color: '#475569' }}>
+                      {monthShort} পর্যন্ত কোনো দোকানের অ্যাডভান্স (জামানত) লেখা নেই।
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {shopDepositRows.length > 0 && (
+                <tfoot>
+                  <tr>
+                    <td colSpan={3} style={{ textAlign: 'right' }}>সর্বমোট</td>
+                    <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopDepositTot.received)}</td>
+                    <td style={{ textAlign: 'right' }}>{U.bnNumber(shopDepositTot.adjusted)}</td>
+                    <td style={{ textAlign: 'right' }}>{U.bnNumber(shopDepositTot.refunded)}</td>
+                    <td style={{ textAlign: 'right' }}>{U.bnNumber(shopDepositTot.balance)}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+
+            <div className="print-totals">
+              <div className="box">
+                মোট ধার্য ভাড়া ({U.monthLabelShort(shopMatrixFrom)} হতে {monthShort}):{' '}
+                <b>{U.bnNumber(shopSumTot.charged)}/-</b>
+              </div>
+              <div className="box">
+                মোট পরিশোধ (নগদ {U.bnNumber(shopSumTot.cash)} + অ্যাডভান্স সমন্বয় {U.bnNumber(shopSumTot.adjust)}):{' '}
+                <b className="amt-paid">{U.bnNumber(shopSumTot.cash + shopSumTot.adjust)}/-</b>
+              </div>
+              <div className="box" style={{ border: '2px solid #000' }}>
+                সকল দোকানের মোট বকেয়া ভাড়া ({monthShort} পর্যন্ত):{' '}
+                <b className="amt-due">{U.bnNumber(shopSumTot.due)}/-</b>
+                {shopSumTot.advance > 0 && (
+                  <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>অগ্রীম জমা {U.bnNumber(shopSumTot.advance)}/-</div>
+                )}
+              </div>
+              <div className="box">
+                অ্যাডভান্স (জামানত) জমা আছে — ভাড়াটিয়াদের পাওনা:{' '}
+                <b className="amt-advance">{U.bnNumber(shopDepositTot.balance)}/-</b>
+              </div>
+            </div>
+
+            <div className="print-note print-note-sm">
+              <span className="print-note-tag">বি.দ্র.</span>
+              <span>
+                বকেয়া ভাড়া = মোট ধার্য − নগদ জমা − অ্যাডভান্স থেকে সমন্বয়; বিদ্যুৎ বিল বকেয়ার হিসাবে নেই। ভাড়াটিয়া
+                না থাকা ("ফাঁকা") মাসে ভাড়া ধার্য হয়নি। অ্যাডভান্স আয় নয় — সমিতির কাছে ভাড়াটিয়ার জমা, দোকান
+                ছাড়লে বাকিটা ফেরতযোগ্য; "ছেড়ে গেছেন — ফেরত বাকি" লেখা সারিতে ফেরত দেওয়া বাকি।
               </span>
             </div>
 
@@ -1520,14 +1770,188 @@ export function ReportView({
 
             <div className="print-foot">
               মোট দোকান: {U.bnDigits(shopMatrix.rows.length)} &nbsp;|&nbsp; {U.monthLabelShort(shopReportFrom)} হতে {monthShort} এর{' '}
-              (মোট {U.bnDigits(shopReportMonths)} মাস) &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
+              (মোট {U.bnDigits(shopReportMonths)} মাস) &nbsp;|&nbsp; পাতা ২/২ &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
+            </div>
+            {footerLinkBlock}
+            </div>{/* /২য় পাতা */}
+          </>
+        )}
+
+        {/* REPORT: দোকানভিত্তিক খতিয়ান — একটি দোকানের মাসওয়ারি ধার্য, জমা, অ্যাডভান্স, বকেয়া */}
+        {reportType === 'shop-ledger' && shopLedgerShop && shopLedgerStatus && (
+          <>
+            <div style={{ marginBottom: '8px', fontSize: '11px', color: '#1e293b' }}>
+              দোকান: <b className="flat-no">{Calc.shopLabel(shopLedgerShop)}</b> &nbsp;|&nbsp;
+              ভাড়াটিয়া: <b className="owner-name">{Calc.shopTenantName(shopLedgerShop, selectedMonth) || Calc.shopTenantName(shopLedgerShop) || '—'}</b> &nbsp;|&nbsp;
+              মোবাইল: <b>{(Calc.shopTenancyFor(shopLedgerShop, selectedMonth) || {}).phone || shopLedgerShop.phone || '—'}</b> &nbsp;|&nbsp;
+              মাসিক ভাড়া: <b>{U.bnTaka(shopLedgerStatus.monthRate)}</b> &nbsp;|&nbsp;
+              ভাড়া শুরু: <b>{U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))}</b>
+            </div>
+
+            {shopLedgerTenancies.length > 0 && (
+              <div style={{ marginBottom: '8px', fontSize: '10px', color: '#334155' }}>
+                <b>ভাড়াটিয়ার ইতিহাস:</b>{' '}
+                {shopLedgerTenancies.map((t, i) => (
+                  <span key={t.id}>
+                    {i > 0 ? ' • ' : ''}{t.tenantName || 'নামহীন'} ({U.monthLabelShort(t.fromMonth)} হতে {t.toMonth ? U.monthLabelShort(t.toMonth) : 'চলছে'}
+                    {Number(t.rent) > 0 ? `, ভাড়া ${U.bnNumber(t.rent)}` : ''}{Number(t.advanceAmount) > 0 ? `, অ্যাডভান্স ${U.bnNumber(t.advanceAmount)}` : ''})
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <table className="print-table tbl-shop-ledger">
+              <thead>
+                <tr>
+                  <th style={{ width: '19%', textAlign: 'left' }}>ভাড়ার মাস</th>
+                  <th className="th-charge" style={{ width: '10%' }}>ধার্য ভাড়া</th>
+                  <th className="th-paid" style={{ width: '10%' }}>নগদ জমা</th>
+                  <th style={{ width: '10%' }}>অ্যাডভান্স<br />সমন্বয়</th>
+                  <th style={{ width: '9%' }}>বিদ্যুৎ বিল</th>
+                  <th style={{ width: '14%' }}>জমার মাস</th>
+                  <th style={{ width: '16%' }}>আদায়কারী</th>
+                  <th className="th-due" style={{ width: '12%' }}>বকেয়া</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shopLedgerRows.map((lr) => (
+                  <tr key={lr.month} className={lr.vacant ? 'vacant-row' : undefined}>
+                    <td style={{ textAlign: 'left' }}>
+                      <b>{lr.label}</b>
+                      {lr.tenancy && shopLedgerTenancies.length > 1 && (
+                        <span style={{ fontSize: '8.5px', color: '#475569' }}> — {lr.tenancy.tenantName || 'নামহীন'}</span>
+                      )}
+                      {lr.depositIn > 0 && <div style={{ fontSize: '8.5px', color: '#a16207' }}>অ্যাডভান্স গ্রহণ {U.bnNumber(lr.depositIn)}</div>}
+                      {lr.depositOut > 0 && <div style={{ fontSize: '8.5px', color: '#b91c1c' }}>অ্যাডভান্স ফেরত {U.bnNumber(lr.depositOut)}</div>}
+                    </td>
+                    <td className="col-charge" style={{ textAlign: 'right' }}>
+                      {lr.vacant ? <span style={{ fontSize: '9px' }}>ফাঁকা</span> : lr.charge ? U.bnNumber(lr.charge) : DASH}
+                    </td>
+                    <td className="col-paid" style={{ textAlign: 'right' }}>{lr.rent + lr.other ? U.bnNumber(lr.rent + lr.other) : (lr.vacant ? '' : DASH)}</td>
+                    <td style={{ textAlign: 'right' }}>{lr.adjust ? U.bnNumber(lr.adjust) : ''}</td>
+                    <td style={{ textAlign: 'right' }}>{lr.electricity ? U.bnNumber(lr.electricity) : ''}</td>
+                    <td style={{ textAlign: 'center', fontSize: '9px' }}>{lr.paidMonths.map(U.monthLabelShort).join(', ')}</td>
+                    <td style={{ textAlign: 'center', fontSize: '9px', color: '#334155' }}>
+                      {lr.collectorIds.map(getCollectorName).filter(Boolean).join(', ')}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                      {lr.balance > 0
+                        ? <span className="due-amount">{U.bnNumber(lr.balance)}</span>
+                        : lr.balance < 0 ? `অগ্রীম ${U.bnNumber(-lr.balance)}` : U.bnNumber(0)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td style={{ textAlign: 'right' }}>সর্বমোট</td>
+                  <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerStatus.charged)}</td>
+                  <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerStatus.paidRent + shopLedgerStatus.paidOther)}</td>
+                  <td style={{ textAlign: 'right' }}>{shopLedgerStatus.paidAdjust ? U.bnNumber(shopLedgerStatus.paidAdjust) : ''}</td>
+                  <td style={{ textAlign: 'right' }}>{shopLedgerStatus.electricity ? U.bnNumber(shopLedgerStatus.electricity) : ''}</td>
+                  <td colSpan={2}></td>
+                  <td style={{ textAlign: 'right' }}>
+                    {shopLedgerStatus.due > 0
+                      ? <span className="due-amount">{U.bnNumber(shopLedgerStatus.due)}</span>
+                      : shopLedgerStatus.advance > 0 ? `অগ্রীম ${U.bnNumber(shopLedgerStatus.advance)}` : U.bnNumber(0)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+
+            <div className="print-totals" style={{ marginTop: '12px' }}>
+              <div className="box">
+                মোট ধার্য ({U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))} হতে {monthShort}):{' '}
+                <b>{U.bnNumber(shopLedgerStatus.charged)}/-</b>
+              </div>
+              <div className="box">
+                মোট পরিশোধিত (নগদ + অ্যাডভান্স সমন্বয়):{' '}
+                <b className="amt-paid">{U.bnNumber(shopLedgerStatus.paid)}/-</b>
+                <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
+                  বিদ্যুৎ বিল আলাদা {U.bnNumber(shopLedgerStatus.electricity)}/-
+                </div>
+              </div>
+              <div className="box" style={{ border: '2px solid #000' }}>
+                বকেয়া পাওনা ({monthShort} পর্যন্ত):{' '}
+                <b className="amt-due">{U.bnNumber(shopLedgerStatus.due)}/-</b>
+              </div>
+              {shopLedgerDeposit && (shopLedgerDeposit.received > 0 || shopLedgerDeposit.agreed > 0) && (
+                <div className="box">
+                  অ্যাডভান্স (জামানত) জমা আছে:{' '}
+                  <b className="amt-advance">{U.bnNumber(shopLedgerDeposit.balance)}/-</b>
+                  <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
+                    গ্রহণ {U.bnNumber(shopLedgerDeposit.received)} − সমন্বয় {U.bnNumber(shopLedgerDeposit.adjusted)}
+                    {shopLedgerDeposit.refunded > 0 ? ` − ফেরত ${U.bnNumber(shopLedgerDeposit.refunded)}` : ''}
+                    {shopLedgerDeposit.agreed > 0 ? ` • চুক্তি ${U.bnNumber(shopLedgerDeposit.agreed)}` : ''}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {shopLedgerDeposit && shopLedgerDeposit.history.length > 0 && (
+              <>
+                <div className="shop-page-title">অ্যাডভান্স (জামানত) খাতা</div>
+                <table className="print-table tbl-shop-deposit">
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', width: '16%' }}>মাস</th>
+                      <th style={{ textAlign: 'left' }}>বিবরণ</th>
+                      <th style={{ width: '14%' }}>গ্রহণ</th>
+                      <th style={{ width: '14%' }}>সমন্বয়</th>
+                      <th style={{ width: '14%' }}>ফেরত</th>
+                      <th style={{ width: '16%' }}>যিনি</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shopLedgerDeposit.history.map((r) => (
+                      <tr key={r.id}>
+                        <td style={{ textAlign: 'left' }}>{U.monthLabelShort(r.rentMonth)}</td>
+                        <td style={{ textAlign: 'left', fontSize: '9.5px' }}>
+                          {Calc.shopKindLabel(r.kind)}
+                          {r.kind === 'advance-adjust' && r.paidMonth !== r.rentMonth ? ` (${U.monthLabelShort(r.paidMonth)} এর হিসাবে)` : ''}
+                          {r.note ? ` — ${r.note}` : ''}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>{r.kind === 'advance' ? U.bnNumber(r.amount) : ''}</td>
+                        <td style={{ textAlign: 'right' }}>{r.kind === 'advance-adjust' ? U.bnNumber(r.amount) : ''}</td>
+                        <td style={{ textAlign: 'right' }}>{r.kind === 'advance-refund' ? U.bnNumber(r.amount) : ''}</td>
+                        <td style={{ textAlign: 'center', fontSize: '9px' }}>{getCollectorName(r.collectorId) || ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+
+            <div className="print-note print-note-sm">
+              <span className="print-note-tag">বি.দ্র.</span>
+              <span>
+                ছকটি ভাড়ার মাস অনুযায়ী; "জমার মাস" কলামে কোন মাসের খতিয়ানে টাকাটা উঠেছে। বকেয়া = ধার্য − নগদ জমা −
+                অ্যাডভান্স থেকে সমন্বয়; বিদ্যুৎ বিল আলাদা। "ফাঁকা" মাসে দোকানে ভাড়াটিয়া ছিল না, ভাড়া ধার্য হয়নি।
+              </span>
+            </div>
+
+            <div className="print-signs" style={{ marginTop: '24px' }}>
+              {(s.signatories || []).map((sig) => (
+                <div key={sig.id} className="s">
+                  <div className="line"></div>
+                  <div className="sd">স্বাক্ষরিত/-</div>
+                  <div className="nm">{sig.name}</div>
+                  <div className="dg">{sig.designation}</div>
+                  <div className="dg">{s.committeeName}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="print-foot">
+              {Calc.shopLabel(shopLedgerShop)} &nbsp;|&nbsp; {U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))} হতে {monthShort}{' '}
+              ({U.bnDigits(shopLedgerRows.length)} মাস) &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
             </div>
           </>
         )}
 
         {/* সব রিপোর্টের নিচে: ছাপা কাগজ থেকে সরাসরি অনলাইন রিপোর্টে যাওয়ার পথ।
-            মাসভিত্তিক বকেয়া লিস্টে এটি প্রতি পাতায় আলাদা করে বসে। */}
-        {reportType !== 'dues-list' && footerLinkBlock}
+            মাসভিত্তিক বকেয়া লিস্টে প্রতি পাতায়, দোকান ভাড়া বিবরণীতে ২য় পাতার ভেতরে। */}
+        {reportType !== 'dues-list' && reportType !== 'shop-rent' && footerLinkBlock}
       </div>
       </div>
     </div>

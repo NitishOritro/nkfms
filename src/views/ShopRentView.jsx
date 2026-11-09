@@ -262,7 +262,7 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions }) {
 /* --------------------------------------------------------------------------
    পাতা
    -------------------------------------------------------------------------- */
-export function ShopRentView({ onOpenPrint }) {
+export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
   const { data, selectedMonth, saveShop, deleteShop, saveShopRents } = useData();
   const { isReadOnly } = useAuth();
 
@@ -454,6 +454,11 @@ export function ShopRentView({ onOpenPrint }) {
             {!isReadOnly && shopsReady && (
               <button className="btn btn-outline btn-sm" onClick={startNewShop}>
                 <Plus size={15} /> নতুন দোকান
+              </button>
+            )}
+            {onOpenShopLedger && shop && (
+              <button className="btn btn-outline btn-sm" onClick={() => onOpenShopLedger(shop.id)} title="নির্বাচিত দোকানের মাসওয়ারি খতিয়ান ছাপুন">
+                <Printer size={15} /> {Calc.shopLabel(shop)}-এর খতিয়ান
               </button>
             )}
             {onOpenPrint && (

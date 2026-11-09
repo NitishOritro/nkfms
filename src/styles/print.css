@@ -882,3 +882,42 @@
     aspect-ratio: auto !important;
   }
 }
+
+@media print {
+  /* দোকান ভাড়া বিবরণী — দুই পাতা: (১) মাস × দোকান ছক, (২) দোকানওয়ারি হিসাব,
+     অ্যাডভান্স, স্বাক্ষর, QR। প্রতিটি পাতার নিজস্ব জলছাপ (ভেতরে Watermark),
+     তাই উপরের সাধারণ জলছাপ এই রিপোর্টে নেই। পাতার উচ্চতা A4-এর ভেতরে। */
+  .shop-page.is-first {
+    position: relative !important;
+    min-height: 268mm !important;
+  }
+  .shop-page + .shop-page {
+    break-before: page !important;
+    page-break-before: always !important;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    border-top: 0 !important;
+  }
+  .shop-page-title {
+    font-size: 12.5px !important;
+    font-weight: 700 !important;
+    margin: 6px 0 4px !important;
+    color: #000 !important;
+  }
+  table.tbl-shop-summary th,
+  table.tbl-shop-summary td,
+  table.tbl-shop-deposit th,
+  table.tbl-shop-deposit td,
+  table.tbl-shop-ledger th,
+  table.tbl-shop-ledger td {
+    font-size: 10.5px !important;
+    padding: 2px 5px !important;
+    line-height: 1.3 !important;
+  }
+  table.tbl-shop-ledger tr.vacant-row > td {
+    background: #f8fafc !important;
+    color: #64748b !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
