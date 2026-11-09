@@ -17,7 +17,11 @@ import * as U from '../utils/format';
                             "দোকানের ভাড়া আদায়" সারিটি এই মাস ধরে নিজে বসে
    ========================================================================== */
 
-const KINDS = ['rent', 'electricity', 'other'];
+// মাসওয়ারি ঘরের খাত — শেষটি অ্যাডভান্স (জামানত) থেকে কাটা, নগদ নয় কিন্তু ভাড়া
+// পরিশোধ ধরা হয়। অ্যাডভান্স গ্রহণ/ফেরত এখানে নয় — "দোকান ভাড়া এন্ট্রি ফর্ম"-এ।
+const KINDS = ['rent', 'electricity', 'other', 'advance-adjust'];
+// shopLedger সারিতে খাতগুলোর ঘরের নাম
+const ROW_KEY = { rent: 'rent', electricity: 'electricity', other: 'other', 'advance-adjust': 'adjust' };
 
 const emptyShop = (serial) => ({
   id: '',
@@ -28,6 +32,9 @@ const emptyShop = (serial) => ({
   monthlyRent: '',
   rentHistory: [],
   electricityShare: '',
+  advanceAmount: '',
+  advanceAdjust: '',
+  advanceNote: '',
   active: true,
   joinMonth: U.currentMonth(),
   closedFrom: '',
@@ -84,6 +91,23 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions }) {
           <input className="form-input" type="number" min="0" value={draft.electricityShare}
             onChange={(e) => set({ electricityShare: e.target.value })} />
           <div className="form-hint">এন্ট্রির ঘরে ডিফল্ট হিসেবে বসে; না থাকলে ০।</div>
+        </div>
+        <div className="form-group" style={field}>
+          <label className="form-label">অ্যাডভান্স (জামানত) — চুক্তির অঙ্ক</label>
+          <input className="form-input" type="number" min="0" value={draft.advanceAmount}
+            onChange={(e) => set({ advanceAmount: e.target.value })} />
+          <div className="form-hint">শুধু তথ্য; আসল গ্রহণ "দোকান ভাড়া এন্ট্রি ফর্ম" → অ্যাডভান্স থেকে লিখুন।</div>
+        </div>
+        <div className="form-group" style={field}>
+          <label className="form-label">অ্যাডভান্স থেকে মাসে কত কাটা হবে</label>
+          <input className="form-input" type="number" min="0" value={draft.advanceAdjust}
+            onChange={(e) => set({ advanceAdjust: e.target.value })} />
+          <div className="form-hint">চুক্তি অনুযায়ী; এন্ট্রি ফর্মে ডিফল্ট বসে, বদলানো যায়। ০ = কাটা হয় না।</div>
+        </div>
+        <div className="form-group" style={field}>
+          <label className="form-label">অ্যাডভান্সের শর্ত / মন্তব্য</label>
+          <input className="form-input" value={draft.advanceNote} placeholder="যেমন: চুক্তি ০১-০৭-২০২৫, ছাড়লে ফেরত"
+            onChange={(e) => set({ advanceNote: e.target.value })} />
         </div>
         <div className="form-group" style={field}>
           <label className="form-label">ভাড়া ধরা শুরু (মাস) *</label>
@@ -228,7 +252,8 @@ export function ShopRentView({ onOpenPrint }) {
 
   const baseDraft = (month) => {
     const row = rowByMonth[month];
-    const items = row ? row.items : [];
+    // এই ঘরগুলোর খাত শুধু — অ্যাডভান্স গ্রহণ/ফেরতের সারি এখানে নয়
+    const items = row ? row.items.filter((r) => KINDS.includes(r.kind)) : [];
     const pick = (kind) => items.find((r) => r.kind === kind);
     const notes = Array.from(new Set(items.map((r) => r.note).filter(Boolean)));
     const nextMonth = U.addMonths(month, 1);
@@ -236,6 +261,7 @@ export function ShopRentView({ onOpenPrint }) {
       rent: pick('rent') ? String(pick('rent').amount) : '',
       electricity: pick('electricity') ? String(pick('electricity').amount) : '',
       other: pick('other') ? String(pick('other').amount) : '',
+      'advance-adjust': pick('advance-adjust') ? String(pick('advance-adjust').amount) : '',
       paidMonth: items[0]?.paidMonth || (U.monthIndex(nextMonth) <= U.monthIndex(currentMonth) ? nextMonth : currentMonth),
       collectorId: items[0]?.collectorId || lastCollector,
       note: notes.join('; ')
@@ -261,9 +287,10 @@ export function ShopRentView({ onOpenPrint }) {
     const rent = Number(d.rent) || 0;
     const electricity = Number(d.electricity) || 0;
     const other = Number(d.other) || 0;
+    const adjust = Number(d['advance-adjust']) || 0;
     // নোটটি একটি রেকর্ডেই থাকে — অন্যান্য/সমন্বয় থাকলে সেটিতে (খতিয়ানের
-    // লাইনে ঐ লেখাটাই বসে), নইলে ভাড়ায়, নইলে বিদ্যুৎ বিলে
-    const noteOn = other > 0 ? 'other' : rent > 0 ? 'rent' : 'electricity';
+    // লাইনে ঐ লেখাটাই বসে), নইলে ভাড়ায়, নইলে বিদ্যুৎ বিলে, নইলে অ্যাডভান্স সমন্বয়ে
+    const noteOn = other > 0 ? 'other' : rent > 0 ? 'rent' : electricity > 0 ? 'electricity' : 'advance-adjust';
     const common = {
       shopId: shop.id,
       rentMonth: month,
@@ -274,7 +301,8 @@ export function ShopRentView({ onOpenPrint }) {
     return [
       { ...common, kind: 'rent', amount: rent, note: noteOn === 'rent' ? d.note : '' },
       { ...common, kind: 'electricity', amount: electricity, note: noteOn === 'electricity' ? d.note : '' },
-      { ...common, kind: 'other', amount: other, note: noteOn === 'other' ? d.note : '' }
+      { ...common, kind: 'other', amount: other, note: noteOn === 'other' ? d.note : '' },
+      { ...common, kind: 'advance-adjust', amount: adjust, note: noteOn === 'advance-adjust' ? d.note : '' }
     ];
   };
 
@@ -302,6 +330,9 @@ export function ShopRentView({ onOpenPrint }) {
     ...shop,
     monthlyRent: String(shop.monthlyRent || ''),
     electricityShare: String(shop.electricityShare || ''),
+    advanceAmount: String(shop.advanceAmount || ''),
+    advanceAdjust: String(shop.advanceAdjust || ''),
+    advanceNote: shop.advanceNote || '',
     rentHistory: (shop.rentHistory || []).map((h) => ({ ...h }))
   });
   const submitShop = () => {
@@ -522,8 +553,29 @@ export function ShopRentView({ onOpenPrint }) {
                 {status.due > 0 && status.monthRate > 0
                   ? `প্রায় ${U.bnDigits(Math.round(status.due / status.monthRate))} মাসের সমতুল্য`
                   : 'সব মাসের ভাড়া পরিশোধিত'}
+                {status.paidAdjust > 0 && ` • অ্যাডভান্স থেকে সমন্বয় ${U.bnTaka(status.paidAdjust)}`}
               </div>
             </div>
+            {/* অ্যাডভান্স (জামানত) — চুক্তিতে থাকলে বা কখনো নেওয়া হলে */}
+            {(() => {
+              const dep = Calc.shopDeposit(data, shop);
+              if (!(dep.received || dep.agreed || dep.refunded)) return null;
+              return (
+                <div className="metric-card warning">
+                  <div className="metric-label">অ্যাডভান্স (জামানত) জমা আছে</div>
+                  <div className="metric-value" style={{ color: 'var(--warning-dark)' }}>{U.bnTaka(dep.balance)}</div>
+                  <div className="metric-sub">
+                    গ্রহণ {U.bnTaka(dep.received)} • সমন্বয় {U.bnTaka(dep.adjusted)}
+                    {dep.refunded > 0 && ` • ফেরত ${U.bnTaka(dep.refunded)}`}
+                    {dep.agreed > 0 && ` • চুক্তি ${U.bnTaka(dep.agreed)}`}
+                    {dep.monthlyAdjust > 0 && `, মাসে ${U.bnTaka(dep.monthlyAdjust)} কাটা`}
+                    {dep.agreed > 0 && dep.received < dep.agreed && (
+                      <span style={{ color: '#b91c1c' }}> • চুক্তির চেয়ে {U.bnTaka(dep.agreed - dep.received)} কম নেওয়া/লেখা</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* ৪. মাসভিত্তিক এন্ট্রি */}
@@ -549,6 +601,7 @@ export function ShopRentView({ onOpenPrint }) {
                       <th className="amount">ভাড়া জমা</th>
                       <th className="amount">বিদ্যুৎ বিল</th>
                       <th className="amount">অন্যান্য</th>
+                      <th className="amount" title="ভাড়াটিয়ার অ্যাডভান্স (জামানত) থেকে কেটে — নগদ নয়">অ্যাডভান্স সমন্বয়</th>
                       <th>জমার মাস (খতিয়ান)</th>
                       <th>আদায়কারী</th>
                       <th>নোট</th>
@@ -561,7 +614,7 @@ export function ShopRentView({ onOpenPrint }) {
                       const row = rowByMonth[m];
                       const d = draftFor(m);
                       const dirty = isDirty(m);
-                      const hasAny = row && (row.rent || row.electricity || row.other);
+                      const hasAny = row && (row.rent || row.electricity || row.other || row.adjust);
                       const isCurrent = m === currentMonth;
                       return (
                         <tr key={m} className={`${dirty ? 'dirty-row' : ''}${hasAny ? ' paid-row' : ''}`}>
@@ -573,7 +626,7 @@ export function ShopRentView({ onOpenPrint }) {
                           {KINDS.map((k) => (
                             <td key={k} className="amount">
                               {isReadOnly ? (
-                                num(row ? row[k] : 0)
+                                num(row ? row[ROW_KEY[k]] : 0)
                               ) : (
                                 <input
                                   className="table-input"

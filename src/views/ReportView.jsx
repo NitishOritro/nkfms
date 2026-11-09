@@ -373,7 +373,11 @@ export function ReportView({
   const shopMatrixFrom = s.startMonth || '2024-08';
   const shopMatrix = Calc.shopRentMatrix(data, shopMatrixFrom, selectedMonth);
   const shopGridElec = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.electricity, 0);
-  const shopGridTotal = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.rent + r.totals.other, 0) + shopGridElec;
+  // অ্যাডভান্স থেকে কাটা — ভাড়া পরিশোধ ধরা হয় (ছকে ঘরের ভেতরে), নগদ নয়
+  const shopGridAdjust = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.adjust, 0);
+  const shopGridTotal = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.rent + r.totals.other + r.totals.adjust, 0) + shopGridElec;
+  // অ্যাডভান্স (জামানত) — সমিতির কাছে ভাড়াটিয়াদের জমা
+  const shopDepositTot = Calc.shopDepositTotals(data, selectedMonth);
   // পুরোনো কাগজের একত্রিত "দোকান ভাড়া ও বিবিধ আয়" (সেটিংসে shopRentLegacy)
   const shopLegacy = Calc.shopRentLegacy(data);
   const shopLegacyTotal = shopLegacy.reduce((s2, l) => s2 + l.amount, 0);
@@ -1390,13 +1394,13 @@ export function ReportView({
                 ))}
                 {shopMatrix.months.map((m, mi) => {
                   const ct = shopMatrix.colTotals[mi];
-                  const rowTotal = ct.rent + ct.other + ct.electricity;
+                  const rowTotal = ct.rent + ct.other + ct.adjust + ct.electricity;
                   return (
                     <tr key={m}>
                       <td style={{ textAlign: 'left' }}><b>{U.monthLabel(m)}</b></td>
                       {shopMatrix.rows.map((r) => {
                         const c = r.cells[mi];
-                        const paid = c.rent + c.other;
+                        const paid = c.rent + c.other + c.adjust;
                         const tip = c.paidMonths.length ? `জমার মাস: ${c.paidMonths.map(U.monthLabelShort).join(', ')}` : undefined;
                         return (
                           <React.Fragment key={r.shop.id}>
@@ -1406,6 +1410,11 @@ export function ReportView({
                               title={tip}
                             >
                               {!c.chargeable ? '' : paid > 0 ? U.bnNumber(paid) : DASH}
+                              {c.adjust > 0 && (
+                                <div style={{ fontSize: '8px', fontWeight: 400, color: '#475569', lineHeight: 1.1 }}>
+                                  অ্যাড. {U.bnNumber(c.adjust)}
+                                </div>
+                              )}
                             </td>
                             <td className={!c.chargeable ? 'na' : undefined} style={{ textAlign: 'center' }} title={tip}>
                               {c.electricity > 0 ? U.bnNumber(c.electricity) : ''}
@@ -1429,7 +1438,7 @@ export function ReportView({
                   {shopMatrix.rows.map((r) => (
                     <React.Fragment key={r.shop.id}>
                       <td className="col-paid grp" style={{ textAlign: 'center' }}>
-                        {U.bnNumber(r.totals.rent + r.totals.other)}
+                        {U.bnNumber(r.totals.rent + r.totals.other + r.totals.adjust)}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         {r.totals.electricity ? U.bnNumber(r.totals.electricity) : ''}
@@ -1462,12 +1471,24 @@ export function ReportView({
                 <b className="amt-paid">{U.bnNumber(shopGridTotal)}/-</b>
                 <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
                   এর মধ্যে বিদ্যুৎ বিল {U.bnNumber(shopGridElec)}/-
+                  {shopGridAdjust > 0 && <>, অ্যাডভান্স থেকে সমন্বয় {U.bnNumber(shopGridAdjust)}/- (নগদ নয়)</>}
                 </div>
               </div>
               <div className="box" style={{ border: '2px solid #000' }}>
                 সর্বমোট আদায় ({U.monthLabelShort(shopLegacy.length ? shopLegacyFrom : shopMatrixFrom)} হতে {monthShort} পর্যন্ত):{' '}
                 <b className="amt-paid">{U.bnNumber(shopGridTotal + shopLegacyTotal)}/-</b>
               </div>
+              {/* অ্যাডভান্স (জামানত) — কোনো দোকানে থাকলে তবেই; এটি আয় নয়, ভাড়াটিয়ার জমা */}
+              {(shopDepositTot.received > 0 || shopDepositTot.refunded > 0) && (
+                <div className="box">
+                  দোকানের অ্যাডভান্স (জামানত), {monthShort} পর্যন্ত জমা আছে:{' '}
+                  <b className="amt-advance">{U.bnNumber(shopDepositTot.balance)}/-</b>
+                  <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
+                    গ্রহণ {U.bnNumber(shopDepositTot.received)} − ভাড়ায় সমন্বয় {U.bnNumber(shopDepositTot.adjusted)}
+                    {shopDepositTot.refunded > 0 && <> − ফেরত {U.bnNumber(shopDepositTot.refunded)}</>}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="print-note print-note-sm">
@@ -1476,6 +1497,9 @@ export function ReportView({
                 ছকটি ভাড়ার মাস অনুযায়ী — ঘরে অঙ্ক থাকলে ঐ মাসের ভাড়া জমা পড়েছে, {DASH} থাকলে
                 বকেয়া, ফাঁকা ঘর মানে ঐ মাসে দোকানটি ভাড়ায় ছিল না। প্রতিটি দোকানের পাশের কলামে ঐ মাসের
                 বিদ্যুৎ বিল; মোট জমায় ভাড়া ও বিদ্যুৎ বিল দুটোই আছে, বকেয়ার হিসাবে শুধু ভাড়া।
+                {shopGridAdjust > 0 && (
+                  <> ঘরে "অ্যাড." লেখা অংশটুকু ভাড়াটিয়ার অ্যাডভান্স (জামানত) থেকে কেটে সমন্বয় — ভাড়া পরিশোধ ধরা হয়েছে, নগদ ওঠেনি।</>
+                )}
                 {shopLegacy.length > 0 && (
                   <> উপরের ধূসর সারিগুলো পুরোনো কাগজের একত্রিত হিসাব — দোকানওয়ারি ভাঙা নেই, বকেয়ার হিসাবেও ধরা হয়নি।</>
                 )}

@@ -338,6 +338,10 @@ export function DataProvider({ children }) {
       .map((h) => ({ fromMonth: h.fromMonth, rate: Number(h.rate) || 0 }))
       .sort((a, b) => U.monthIndex(a.fromMonth) - U.monthIndex(b.fromMonth)),
     electricityShare: Number(s.electricityShare) || 0,
+    // অ্যাডভান্স (জামানত) চুক্তি — আসল গ্রহণ/সমন্বয়/ফেরত shop_rents-এ
+    advanceAmount: Number(s.advanceAmount) || 0,
+    advanceAdjust: Number(s.advanceAdjust) || 0,
+    advanceNote: (s.advanceNote || '').trim(),
     active: s.active !== false,
     joinMonth: s.joinMonth || '',
     closedFrom: s.closedFrom || '',

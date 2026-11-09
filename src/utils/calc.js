@@ -338,7 +338,8 @@ export function ledgerSummary(data, month) {
     .map((r) => ({
       id: `auto-shop-rent-${r.refId || 'none'}`,
       month,
-      side: 'income',
+      // অ্যাডভান্স ফেরতের সারি খরচের দিকে, বাকিগুলো জমার দিকে
+      side: r.side || 'income',
       serial: null,
       title: r.title,
       lines: r.lines,
@@ -348,14 +349,19 @@ export function ledgerSummary(data, month) {
       note: r.note,
       auto: true
     }));
+  const autoShopIncome = autoShop.filter((r) => r.side !== 'expense');
+  const autoShopExpense = autoShop.filter((r) => r.side === 'expense');
 
   // কাগজে আদায়কারীদের সারিগুলো সবার উপরে থাকে, তাই আগে সেগুলোই
   const income = [
     ...auto,
-    ...autoShop,
+    ...autoShopIncome,
     ...stored.sort((a, b) => (a.serial ?? 999) - (b.serial ?? 999))
   ];
-  const expenseSorted = expense.sort((a, b) => (a.serial ?? 999) - (b.serial ?? 999));
+  const expenseSorted = [
+    ...autoShopExpense,
+    ...expense.sort((a, b) => (a.serial ?? 999) - (b.serial ?? 999))
+  ];
 
   const sum = (list) => list.reduce((t, e) => t + ledgerRowAmount(e), 0);
   const totalIncome = sum(income);
@@ -466,8 +472,17 @@ export function carryoverRow(data, month) {
 export const SHOP_RENT_KINDS = [
   { id: 'rent', label: 'ভাড়া' },
   { id: 'electricity', label: 'বিদ্যুৎ বিল' },
-  { id: 'other', label: 'অন্যান্য / সমন্বয়' }
+  { id: 'other', label: 'অন্যান্য / সমন্বয়' },
+  // অ্যাডভান্স (জামানত): গ্রহণ নগদে ঢোকে, সমন্বয় নগদ নয় (ভাড়া থেকে কাটা),
+  // ফেরত নগদে বেরোয়। ব্যালেন্স = গ্রহণ − সমন্বয় − ফেরত।
+  { id: 'advance-adjust', label: 'অ্যাডভান্স থেকে সমন্বয়' },
+  { id: 'advance', label: 'অ্যাডভান্স (জামানত) গ্রহণ' },
+  { id: 'advance-refund', label: 'অ্যাডভান্স ফেরত' }
 ];
+/** নগদে ওঠা দোকান-ভাড়া খাতের জমা — খতিয়ানের "দোকানের ভাড়া আদায়" সারি */
+export const SHOP_CASH_KINDS = ['rent', 'electricity', 'other'];
+/** যে খাতগুলো ভাড়ার পাওনা মেটায় (নগদ হোক বা অ্যাডভান্স থেকে কাটা) */
+export const SHOP_SETTLING_KINDS = ['rent', 'other', 'advance-adjust'];
 
 export function shopKindLabel(kind) {
   const k = SHOP_RENT_KINDS.find((x) => x.id === kind);
@@ -550,20 +565,67 @@ export function shopStatus(data, shop, asOfMonth) {
   const charged = shopChargeUpTo(shop, data.settings, asOfMonth);
   const paidRent = sumAmt(rents.filter((r) => r.kind === 'rent'));
   const paidOther = sumAmt(rents.filter((r) => r.kind === 'other'));
+  // অ্যাডভান্স থেকে কাটা — নগদ নয়, কিন্তু ঐ মাসের ভাড়া পরিশোধিত
+  const paidAdjust = sumAmt(rents.filter((r) => r.kind === 'advance-adjust'));
   const electricity = sumAmt(rents.filter((r) => r.kind === 'electricity'));
-  const balance = charged - paidRent - paidOther;
+  const balance = charged - paidRent - paidOther - paidAdjust;
   return {
     shop,
     charged,
     paidRent,
     paidOther,
-    paid: paidRent + paidOther,
+    paidAdjust,
+    paid: paidRent + paidOther + paidAdjust,
     electricity,
     balance,
     due: balance > 0 ? balance : 0,
+    // "advance" এখানে অগ্রীম (বেশি দেওয়া ভাড়া) — অ্যাডভান্স/জামানত নয়, সেটি deposit
     advance: balance < 0 ? -balance : 0,
+    deposit: shopDeposit(data, shop, asOfMonth),
     monthRate: shopRentForMonth(shop, asOfMonth)
   };
+}
+
+/**
+ * একটি দোকানের অ্যাডভান্স (জামানত) খাতা — asOfMonth দিলে ঐ মাস পর্যন্ত
+ * (rentMonth ধরে), না দিলে পুরোটা। balance = received − adjusted − refunded।
+ * agreed/monthlyAdjust চুক্তির তথ্য (দোকানের ঘরে লেখা), history কালানুক্রমে।
+ */
+export function shopDeposit(data, shop, asOfMonth) {
+  const limit = asOfMonth ? U.monthIndex(asOfMonth) : Infinity;
+  const rows = shopRentsOf(data, shop.id).filter(
+    (r) => r.kind && r.kind.startsWith('advance') && U.monthIndex(r.rentMonth) <= limit
+  );
+  const received = sumAmt(rows.filter((r) => r.kind === 'advance'));
+  const adjusted = sumAmt(rows.filter((r) => r.kind === 'advance-adjust'));
+  const refunded = sumAmt(rows.filter((r) => r.kind === 'advance-refund'));
+  return {
+    received,
+    adjusted,
+    refunded,
+    balance: received - adjusted - refunded,
+    agreed: Number(shop.advanceAmount) || 0,
+    monthlyAdjust: Number(shop.advanceAdjust) || 0,
+    history: rows
+      .slice()
+      .sort((a, b) => U.monthIndex(a.rentMonth) - U.monthIndex(b.rentMonth) || a.kind.localeCompare(b.kind))
+  };
+}
+
+/** সব দোকানের অ্যাডভান্স মিলিয়ে — সমিতির কাছে ভাড়াটিয়াদের মোট জমা (দায়) */
+export function shopDepositTotals(data, asOfMonth) {
+  return shopsSorted(data, true).reduce(
+    (acc, shop) => {
+      const d = shopDeposit(data, shop, asOfMonth);
+      acc.received += d.received;
+      acc.adjusted += d.adjusted;
+      acc.refunded += d.refunded;
+      acc.balance += d.balance;
+      if (d.received || d.adjusted || d.refunded) acc.shopCount += 1;
+      return acc;
+    },
+    { received: 0, adjusted: 0, refunded: 0, balance: 0, shopCount: 0 }
+  );
 }
 
 /** একটি দোকানের মাসভিত্তিক লেজার (rentMonth ধরে), ফ্ল্যাটের ledger() এর অনুরূপ */
@@ -579,16 +641,22 @@ export function shopLedger(data, shop, asOfMonth) {
     const inMonth = rents.filter((r) => r.rentMonth === month);
     const rent = sumAmt(inMonth.filter((r) => r.kind === 'rent'));
     const other = sumAmt(inMonth.filter((r) => r.kind === 'other'));
+    const adjust = sumAmt(inMonth.filter((r) => r.kind === 'advance-adjust'));
     const electricity = sumAmt(inMonth.filter((r) => r.kind === 'electricity'));
-    running += charge - rent - other;
+    const depositIn = sumAmt(inMonth.filter((r) => r.kind === 'advance'));
+    const depositOut = sumAmt(inMonth.filter((r) => r.kind === 'advance-refund'));
+    running += charge - rent - other - adjust;
     rows.push({
       month,
       label: U.monthLabel(month),
       charge,
       rent,
       other,
+      adjust,
       electricity,
-      paid: rent + other,
+      depositIn,
+      depositOut,
+      paid: rent + other + adjust,
       items: inMonth,
       collectorIds: Array.from(new Set(inMonth.map((r) => r.collectorId).filter(Boolean))),
       paidMonths: Array.from(new Set(inMonth.map((r) => r.paidMonth).filter(Boolean))).sort(),
@@ -612,15 +680,23 @@ export function shopRentByPaidMonth(data, paidMonth) {
       const rent = sumAmt(items.filter((r) => r.kind === 'rent'));
       const electricity = sumAmt(items.filter((r) => r.kind === 'electricity'));
       const other = sumAmt(items.filter((r) => r.kind === 'other'));
+      // অ্যাডভান্স: গ্রহণ ও ফেরত নগদ (আলাদা খাত), সমন্বয় নগদ নয় — স্মারক
+      const deposit = sumAmt(items.filter((r) => r.kind === 'advance'));
+      const refund = sumAmt(items.filter((r) => r.kind === 'advance-refund'));
+      const adjust = sumAmt(items.filter((r) => r.kind === 'advance-adjust'));
       return {
         shop,
         items,
         rent,
         electricity,
         other,
+        deposit,
+        refund,
+        adjust,
+        // "মোট" = দোকান-ভাড়া খাতে নগদ জমা; অ্যাডভান্স গ্রহণ/ফেরত আলাদা কলামে
         total: rent + electricity + other,
         rentMonths: Array.from(
-          new Set(items.filter((r) => r.kind === 'rent').map((r) => r.rentMonth))
+          new Set(items.filter((r) => SHOP_SETTLING_KINDS.includes(r.kind) && r.kind !== 'other').map((r) => r.rentMonth))
         ).sort(),
         collectorIds: Array.from(new Set(items.map((r) => r.collectorId).filter(Boolean))),
         notes: items.map((r) => r.note).filter(Boolean)
@@ -632,10 +708,13 @@ export function shopRentByPaidMonth(data, paidMonth) {
       acc.rent += r.rent;
       acc.electricity += r.electricity;
       acc.other += r.other;
+      acc.deposit += r.deposit;
+      acc.refund += r.refund;
+      acc.adjust += r.adjust;
       acc.total += r.total;
       return acc;
     },
-    { rent: 0, electricity: 0, other: 0, total: 0, shopCount: rows.length }
+    { rent: 0, electricity: 0, other: 0, deposit: 0, refund: 0, adjust: 0, total: 0, shopCount: rows.length }
   );
   return { rows, totals };
 }
@@ -668,7 +747,9 @@ export function shopRentMonthlyList(data) {
   // প্রথম জমার মাস থেকে চলতি মাস পর্যন্ত প্রতিটি মাস — যে মাসে কিছু ওঠেনি
   // সেটিও তালিকায় থাকে (rows খালি), নইলে ফাঁকা মাসগুলো চোখে পড়ে না।
   const paidMonths = (data.shopRents || []).map((r) => r.paidMonth).filter(Boolean);
-  if (!paidMonths.length) return { list: [], grand: { rent: 0, electricity: 0, other: 0, total: 0, monthCount: 0 } };
+  if (!paidMonths.length) {
+    return { list: [], grand: { rent: 0, electricity: 0, other: 0, deposit: 0, refund: 0, adjust: 0, total: 0, monthCount: 0 } };
+  }
   const from = Math.min(...paidMonths.map(U.monthIndex));
   const to = Math.max(U.monthIndex(lastSelectableMonth(data)), ...paidMonths.map(U.monthIndex));
   const months = [];
@@ -679,10 +760,13 @@ export function shopRentMonthlyList(data) {
       acc.rent += m.totals.rent;
       acc.electricity += m.totals.electricity;
       acc.other += m.totals.other;
+      acc.deposit += m.totals.deposit;
+      acc.refund += m.totals.refund;
+      acc.adjust += m.totals.adjust;
       acc.total += m.totals.total;
       return acc;
     },
-    { rent: 0, electricity: 0, other: 0, total: 0, monthCount: list.filter((m) => m.rows.length).length }
+    { rent: 0, electricity: 0, other: 0, deposit: 0, refund: 0, adjust: 0, total: 0, monthCount: list.filter((m) => m.rows.length).length }
   );
   return { list, grand };
 }
@@ -709,7 +793,12 @@ export function shopRentMatrix(data, fromMonth, toMonth) {
         rent: sumAmt(inMonth.filter((r) => r.kind === 'rent')),
         electricity: sumAmt(inMonth.filter((r) => r.kind === 'electricity')),
         other: sumAmt(inMonth.filter((r) => r.kind === 'other')),
-        paidMonths: Array.from(new Set(inMonth.map((r) => r.paidMonth).filter(Boolean))).sort()
+        // অ্যাডভান্স থেকে কাটা — ভাড়া পরিশোধ ধরা হয়, নগদ নয়
+        adjust: sumAmt(inMonth.filter((r) => r.kind === 'advance-adjust')),
+        // জমার মাস — ভাড়া/বিদ্যুৎ/সমন্বয়ের; অ্যাডভান্স গ্রহণ/ফেরতের মাস এখানে নয়
+        paidMonths: Array.from(new Set(
+          inMonth.filter((r) => r.kind !== 'advance' && r.kind !== 'advance-refund').map((r) => r.paidMonth).filter(Boolean)
+        )).sort()
       };
     });
     return {
@@ -720,9 +809,10 @@ export function shopRentMatrix(data, fromMonth, toMonth) {
           charge: a.charge + c.charge,
           rent: a.rent + c.rent,
           electricity: a.electricity + c.electricity,
-          other: a.other + c.other
+          other: a.other + c.other,
+          adjust: a.adjust + c.adjust
         }),
-        { charge: 0, rent: 0, electricity: 0, other: 0 }
+        { charge: 0, rent: 0, electricity: 0, other: 0, adjust: 0 }
       ),
       status: shopStatus(data, shop, toMonth)
     };
@@ -734,9 +824,10 @@ export function shopRentMatrix(data, fromMonth, toMonth) {
         charge: a.charge + r.cells[i].charge,
         rent: a.rent + r.cells[i].rent,
         electricity: a.electricity + r.cells[i].electricity,
-        other: a.other + r.cells[i].other
+        other: a.other + r.cells[i].other,
+        adjust: a.adjust + r.cells[i].adjust
       }),
-      { month: m, charge: 0, rent: 0, electricity: 0, other: 0 }
+      { month: m, charge: 0, rent: 0, electricity: 0, other: 0, adjust: 0 }
     )
   );
   return { months, rows, colTotals };
@@ -748,10 +839,18 @@ export function shopRentMatrix(data, fromMonth, toMonth) {
  * ledgerSummary এগুলো নিজে থেকেই জমার খাতায় বসায়।
  */
 export function shopRentLedgerRows(data, paidMonth) {
-  const inMonth = (data.shopRents || []).filter(
+  const allInMonth = (data.shopRents || []).filter(
     (r) => r.paidMonth === paidMonth && Number(r.amount) > 0
   );
-  if (!inMonth.length) return [];
+  if (!allInMonth.length) return [];
+  // নগদে ওঠা ভাড়া-খাত; অ্যাডভান্স গ্রহণ/ফেরত আলাদা সারিতে (নিচে), সমন্বয় নগদ নয়
+  const inMonth = allInMonth.filter((r) => SHOP_CASH_KINDS.includes(r.kind));
+  // একই মাসে (paidMonth) কোন দোকানের কত অ্যাডভান্স থেকে কাটা হলো — ভাড়ার
+  // লাইনের শেষে স্মারক হিসেবে, যোগফলে নয়
+  const adjustByShop = new Map();
+  allInMonth
+    .filter((r) => r.kind === 'advance-adjust')
+    .forEach((r) => adjustByShop.set(r.shopId, (adjustByShop.get(r.shopId) || 0) + (Number(r.amount) || 0)));
 
   const people = new Map(
     (data.settings.collectors || []).map((c) => [
@@ -770,7 +869,7 @@ export function shopRentLedgerRows(data, paidMonth) {
     byCollector.get(key).push(r);
   });
 
-  return Array.from(byCollector.entries()).map(([collectorId, items]) => {
+  const cashRows = Array.from(byCollector.entries()).map(([collectorId, items]) => {
     // দোকান + খাত অনুযায়ী এক লাইনে — একই দোকানের একাধিক মাসের ভাড়া একসাথে
     const groups = new Map();
     items.forEach((r) => {
@@ -796,7 +895,10 @@ export function shopRentLedgerRows(data, paidMonth) {
         // নোট থাকলে লাইনের শেষে — যেমন "৮ মাসের ভাড়া একত্রে"
         const noteTxt = g.notes.length ? ` — ${g.notes.join('; ')}` : '';
         let text;
-        if (g.kind === 'rent') text = `${who}ের ভাড়া (${monthsTxt}) আদায়${noteTxt}`;
+        // ঐ দোকানের এ মাসে অ্যাডভান্স থেকে কাটা থাকলে — স্মারক, নগদ নয়
+        const adj = adjustByShop.get(g.shopId) || 0;
+        const adjTxt = adj > 0 ? ` (এছাড়া অ্যাডভান্স থেকে সমন্বয় ${U.bnNumber(adj)}, নগদ নয়)` : '';
+        if (g.kind === 'rent') text = `${who}ের ভাড়া (${monthsTxt}) আদায়${noteTxt}${adjTxt}`;
         else if (g.kind === 'electricity') text = `${who}ের বিদ্যুৎ বিল (${monthsTxt}) আদায়${noteTxt}`;
         else text = g.notes.length ? g.notes.join('; ') : `${who} — অন্যান্য/সমন্বয় (${monthsTxt})`;
         return { text, amount: g.amount };
@@ -806,6 +908,7 @@ export function shopRentLedgerRows(data, paidMonth) {
     const who = p ? [p.honorific, p.name].filter(Boolean).join(' ') : '';
     const shopCount = new Set(items.map((r) => r.shopId)).size;
     return {
+      side: 'income',
       refId: collectorId,
       collectorName: p ? p.name : '',
       title: who
@@ -816,4 +919,50 @@ export function shopRentLedgerRows(data, paidMonth) {
       note: `${U.bnDigits(shopCount)} টি দোকান`
     };
   });
+
+  // অ্যাডভান্স (জামানত) গ্রহণ → আয়ের আলাদা সারি; ফেরত → খরচের সারি।
+  // refId-তে ":advance"/":refund" যুক্ত — ভাড়ার সারির claim-এর সাথে মেশে না।
+  const depositRows = (kind, side, suffix, titleOf, lineOf) => {
+    const rows = allInMonth.filter((r) => r.kind === kind);
+    if (!rows.length) return [];
+    const byCol = new Map();
+    rows.forEach((r) => {
+      const key = r.collectorId || '';
+      if (!byCol.has(key)) byCol.set(key, []);
+      byCol.get(key).push(r);
+    });
+    return Array.from(byCol.entries()).map(([collectorId, items]) => {
+      const p = people.get(collectorId);
+      const who = p ? [p.honorific, p.name].filter(Boolean).join(' ') : '';
+      const lines = items
+        .slice()
+        .sort((a, b) => shopOrder(a.shopId) - shopOrder(b.shopId))
+        .map((r) => {
+          const shop = shopById.get(r.shopId);
+          const noteTxt = r.note ? ` — ${r.note}` : '';
+          return { text: `${lineOf(shop ? shopLabel(shop) : 'দোকান', r)}${noteTxt}`, amount: Number(r.amount) || 0 };
+        });
+      return {
+        side,
+        refId: `${collectorId}:${suffix}`,
+        collectorName: p ? p.name : '',
+        title: titleOf(who),
+        lines,
+        amount: lines.reduce((s, l) => s + l.amount, 0),
+        note: `${U.bnDigits(new Set(items.map((r) => r.shopId)).size)} টি দোকান`
+      };
+    });
+  };
+  const received = depositRows(
+    'advance', 'income', 'advance',
+    (who) => (who ? `${who} কর্তৃক দোকানের অ্যাডভান্স (জামানত) গ্রহণ` : 'দোকানের অ্যাডভান্স (জামানত) গ্রহণ'),
+    (label, r) => `${label}ের অ্যাডভান্স (${U.monthLabelShort(r.rentMonth)}) গ্রহণ`
+  );
+  const refunded = depositRows(
+    'advance-refund', 'expense', 'refund',
+    (who) => (who ? `${who} কর্তৃক দোকানের অ্যাডভান্স (জামানত) ফেরত` : 'দোকানের অ্যাডভান্স (জামানত) ফেরত'),
+    (label, r) => `${label}ের অ্যাডভান্স (${U.monthLabelShort(r.rentMonth)}) ফেরত`
+  );
+
+  return [...cashRows, ...received, ...refunded];
 }

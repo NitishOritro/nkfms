@@ -53,12 +53,22 @@ export function ShopRentEntryFormView() {
   const [collectorId, setCollectorId] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
+  // ফর্মের দুই রূপ: 'rent' = ভাড়া/বিদ্যুৎ আদায় (অ্যাডভান্স থেকে সমন্বয়সহ),
+  // 'deposit' = অ্যাডভান্স (জামানত) গ্রহণ বা ফেরত
+  const [mode, setMode] = useState('rent');
+  // ভাড়ার কতটা ভাড়াটিয়ার অ্যাডভান্স থেকে কেটে সমন্বয় হলো — নগদ নয়
+  const [adjustAmount, setAdjustAmount] = useState('');
+  const [depKind, setDepKind] = useState('advance'); // 'advance' | 'advance-refund'
+  const [depMonth, setDepMonth] = useState(selectedMonth);
+  const [depAmount, setDepAmount] = useState('');
   // আগের এন্ট্রি থাকলে: 'add' = আগের অঙ্কের সাথে যোগ, 'replace' = বদল
   const [overwriteMode, setOverwriteMode] = useState('');
 
   const shops = useMemo(() => Calc.shopsSorted(data), [data]);
   const collectors = data.settings.collectors || [];
   const shop = shops.find((s) => s.id === shopId) || null;
+  // এই দোকানের অ্যাডভান্স (জামানত) খাতা — আজ পর্যন্ত: গ্রহণ − সমন্বয় − ফেরত
+  const deposit = useMemo(() => (shop ? Calc.shopDeposit(data, shop) : null), [data, shop]);
 
   // জমার মাস — সার্ভিস চার্জ ফর্মের মতোই, শুরুর মাস থেকে চলতি মাস পর্যন্ত
   const paidMonths = useMemo(() => Calc.monthOptions(data), [data]);
@@ -88,6 +98,9 @@ export function ShopRentEntryFormView() {
     setFromMonth(first);
     setToMonth(first);
     setOverwriteMode('');
+    // চুক্তিতে মাসে কাটার হার থাকলে ও অ্যাডভান্স জমা থাকলে সেটি নিজে বসে (বদলানো যায়)
+    const dep = Calc.shopDeposit(data, shop);
+    setAdjustAmount(dep.balance > 0 && dep.monthlyAdjust > 0 ? String(Math.min(dep.monthlyAdjust, dep.balance)) : '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId]);
 
@@ -161,7 +174,39 @@ export function ShopRentEntryFormView() {
     () => shopRents.filter((r) => r.kind === 'electricity' && elecAllocation.some((a) => a.month === r.rentMonth)),
     [shopRents, elecAllocation]
   );
-  const hasExisting = existingRent.length > 0 || existingElec.length > 0;
+  // অ্যাডভান্স থেকে সমন্বয় — নগদ ভাড়া বসানোর পর যে মাসে যতটা পাওনা বাকি,
+  // সেখানে ক্রমে; শেষ মাসে যা বাকি
+  const adjustNum = Number(adjustAmount) || 0;
+  const adjustAllocation = useMemo(() => {
+    if (!shop || adjustNum <= 0 || !selectedRentMonths.length) return [];
+    const cashBy = new Map(allocation.map((a) => [a.month, a.amount]));
+    let remaining = adjustNum;
+    const last = selectedRentMonths.length - 1;
+    return selectedRentMonths.map((m, i) => {
+      const room = Math.max(0, Calc.shopRentForMonth(shop, m) - (cashBy.get(m) || 0));
+      const take = i === last ? remaining : Math.min(room, remaining);
+      remaining -= take;
+      return { month: m, amount: take };
+    }).filter((a) => a.amount > 0);
+  }, [shop, adjustNum, selectedRentMonths, allocation]);
+  const existingAdjust = useMemo(
+    () => shopRents.filter((r) => r.kind === 'advance-adjust' && adjustAllocation.some((a) => a.month === r.rentMonth)),
+    [shopRents, adjustAllocation]
+  );
+  // অ্যাডভান্স গ্রহণ/ফেরত — ঐ মাসে একই ধরনের এন্ট্রি আগে থাকলে
+  const depNum = Number(depAmount) || 0;
+  const existingDep = useMemo(
+    () => (depMonth ? shopRents.find((r) => r.kind === depKind && r.rentMonth === depMonth) || null : null),
+    [shopRents, depKind, depMonth]
+  );
+  const existingLabels = mode === 'deposit'
+    ? (existingDep ? [`${U.monthLabelShort(existingDep.rentMonth)} ${Calc.shopKindLabel(existingDep.kind)} ${U.bnTaka(existingDep.amount)}`] : [])
+    : [
+      ...existingRent.map((r) => `${U.monthLabelShort(r.rentMonth)} ভাড়া ${U.bnTaka(r.amount)}`),
+      ...existingElec.map((r) => `${U.monthLabelShort(r.rentMonth)} বিদ্যুৎ বিল ${U.bnTaka(r.amount)}`),
+      ...existingAdjust.map((r) => `${U.monthLabelShort(r.rentMonth)} অ্যাডভান্স সমন্বয় ${U.bnTaka(r.amount)}`)
+    ];
+  const hasExisting = existingLabels.length > 0;
 
   const collectorName = (id) => {
     const c = collectors.find((x) => x.id === id);
@@ -185,7 +230,10 @@ export function ShopRentEntryFormView() {
     setNote('');
     setError('');
     setOverwriteMode('');
-    if (!keepMonth) setPaidMonth(selectedMonth);
+    setAdjustAmount('');
+    setDepAmount('');
+    setDepKind('advance');
+    if (!keepMonth) { setPaidMonth(selectedMonth); setDepMonth(selectedMonth); }
   };
 
   const handleSubmit = (e) => {
@@ -196,11 +244,53 @@ export function ShopRentEntryFormView() {
       setError('সংরক্ষণ করতে অ্যাডমিন হিসেবে লগইন করুন। ভিউ মোডে কেবল দেখা যায়।');
       return;
     }
-    if (!shop) { setError('কোন দোকানের ভাড়া, নির্বাচন করুন।'); return; }
-    if (!paidMonth) { setError('জমার মাস নির্বাচন করুন।'); return; }
-    if (rentNum <= 0 && elecNum <= 0) {
-      setError('দোকান ভাড়া বা বিদ্যুৎ বিল — অন্তত একটির টাকার অঙ্ক লিখুন (০ এর বেশি)।');
+    if (!shop) { setError(mode === 'deposit' ? 'কোন দোকানের অ্যাডভান্স, নির্বাচন করুন।' : 'কোন দোকানের ভাড়া, নির্বাচন করুন।'); return; }
+
+    // ---- অ্যাডভান্স (জামানত) গ্রহণ / ফেরত ----
+    if (mode === 'deposit') {
+      if (!depMonth) { setError('কোন মাসের হিসাবে, নির্বাচন করুন।'); return; }
+      if (depNum <= 0) { setError('অ্যাডভান্সের টাকার অঙ্ক লিখুন (০ এর বেশি)।'); return; }
+      if (!collectorId) { setError(depKind === 'advance' ? 'কে গ্রহণ করলেন, নির্বাচন করুন।' : 'কে ফেরত দিলেন, নির্বাচন করুন।'); return; }
+      if (existingDep && !overwriteMode) {
+        setError('এই মাসে একই ধরনের এন্ট্রি আগে থেকেই আছে। নিচে বেছে নিন — যোগ হবে, নাকি বদলে যাবে।');
+        return;
+      }
+      const amount = existingDep && overwriteMode === 'add' ? Number(existingDep.amount) + depNum : depNum;
+      if (depKind === 'advance-refund' && deposit) {
+        // বদলের বেলায় আগের ফেরতটি ব্যালেন্সে ফিরে আসে, তারপর নতুনটি যায়
+        const available = deposit.balance + (existingDep ? Number(existingDep.amount) : 0);
+        if (amount > available) {
+          setError(`অ্যাডভান্স জমা আছে মাত্র ${U.bnTaka(Math.max(0, available))} — এর বেশি ফেরত লেখা যাবে না।`);
+          return;
+        }
+      }
+      saveShopRents([{
+        shopId: shop.id, rentMonth: depMonth, kind: depKind, amount,
+        paidMonth: depMonth, collectorId, note: note.trim()
+      }]);
+      addToast(
+        `${Calc.shopLabel(shop)} — ${U.monthLabel(depMonth)} মাসের হিসাবে অ্যাডভান্স ${depKind === 'advance' ? 'গ্রহণ' : 'ফেরত'} ${U.bnTaka(depNum)} সংরক্ষিত হয়েছে।`,
+        'success'
+      );
+      resetForm(true);
       return;
+    }
+
+    // ---- ভাড়া / বিদ্যুৎ আদায় ----
+    if (!paidMonth) { setError('জমার মাস নির্বাচন করুন।'); return; }
+    if (rentNum <= 0 && elecNum <= 0 && adjustNum <= 0) {
+      setError('দোকান ভাড়া, বিদ্যুৎ বিল বা অ্যাডভান্স থেকে সমন্বয় — অন্তত একটির টাকার অঙ্ক লিখুন (০ এর বেশি)।');
+      return;
+    }
+    if (adjustNum > 0) {
+      if (!selectedRentMonths.length) { setError('অ্যাডভান্স থেকে কোন মাসের ভাড়া কাটছেন, "হতে – পর্যন্ত" ঠিক করে দিন।'); return; }
+      // বদলের বেলায় ঐ মাসগুলোর আগের সমন্বয় ব্যালেন্সে ফিরে আসে
+      const freed = overwriteMode === 'replace' ? existingAdjust.reduce((s, r) => s + Number(r.amount), 0) : 0;
+      const available = (deposit ? deposit.balance : 0) + freed;
+      if (adjustNum > available) {
+        setError(`অ্যাডভান্স জমা আছে মাত্র ${U.bnTaka(Math.max(0, available))} — এর বেশি সমন্বয় করা যাবে না।`);
+        return;
+      }
     }
     if (rentNum > 0 && !selectedRentMonths.length) {
       setError('ভাড়া কোন কোন মাসের, "হতে – পর্যন্ত" ঠিক করে দিন।');
@@ -234,6 +324,14 @@ export function ShopRentEntryFormView() {
         paidMonth, collectorId, note: trimmedNote
       });
     });
+    adjustAllocation.forEach((a) => {
+      const prev = existingAdjust.find((r) => r.rentMonth === a.month);
+      const amount = prev && overwriteMode === 'add' ? Number(prev.amount) + a.amount : a.amount;
+      entries.push({
+        shopId: shop.id, rentMonth: a.month, kind: 'advance-adjust', amount,
+        paidMonth, collectorId, note: trimmedNote
+      });
+    });
     saveShopRents(entries);
 
     const parts = [];
@@ -243,6 +341,7 @@ export function ShopRentEntryFormView() {
         : `${U.monthLabelShort(fromMonth)} হতে ${U.monthLabelShort(toMonth)}, ${U.bnDigits(selectedRentMonths.length)} মাস`;
       parts.push(`ভাড়া ${U.bnTaka(rentNum)} (${mLabel})`);
     }
+    if (adjustNum > 0) parts.push(`অ্যাডভান্স থেকে সমন্বয় ${U.bnTaka(adjustNum)} (নগদ নয়)`);
     if (elecNum > 0) {
       const eLabel = elecMonths.length === 1
         ? U.monthLabelShort(elecMonths[0])
@@ -271,16 +370,38 @@ export function ShopRentEntryFormView() {
           <div>
             <div className="card-title">
               <Store size={18} color="var(--primary)" />
-              <span>দোকান ভাড়া এন্ট্রি ফর্ম</span>
+              <span>{mode === 'deposit' ? 'দোকানের অ্যাডভান্স (জামানত) — গ্রহণ / ফেরত' : 'দোকান ভাড়া এন্ট্রি ফর্ম'}</span>
             </div>
             <div className="card-subtitle">
-              দোকান নির্বাচন করলে বর্তমান বকেয়া ও প্রথম বকেয়া মাস নিজে থেকেই বসে যাবে।
-              জমার মাস অনুযায়ী মাসিক হিসাব সারসংক্ষেপ ও খতিয়ানে উঠবে।
+              {mode === 'deposit'
+                ? 'অ্যাডভান্স ভাড়া নয় — সমিতির কাছে ভাড়াটিয়ার জমা, দোকান ছাড়লে ফেরতযোগ্য। মাসে মাসে ভাড়া থেকে কাটা হলে সেটি "ভাড়া আদায়" ফর্মে লিখুন।'
+                : 'দোকান নির্বাচন করলে বর্তমান বকেয়া ও প্রথম বকেয়া মাস নিজে থেকেই বসে যাবে। জমার মাস অনুযায়ী মাসিক হিসাব সারসংক্ষেপ ও খতিয়ানে উঠবে।'}
             </div>
           </div>
-          <button type="button" onClick={() => resetForm(false)} className="btn btn-outline btn-sm">
-            ফর্ম খালি করুন
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {/* ফর্মের দুই রূপ */}
+            <div style={{ display: 'inline-flex', border: '1px solid var(--border, #cbd5e1)', borderRadius: '8px', overflow: 'hidden' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${mode === 'rent' ? 'btn-primary' : 'btn-outline'}`}
+                style={{ borderRadius: 0, border: 'none' }}
+                onClick={() => { setMode('rent'); setError(''); setOverwriteMode(''); }}
+              >
+                ভাড়া আদায়
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${mode === 'deposit' ? 'btn-primary' : 'btn-outline'}`}
+                style={{ borderRadius: 0, border: 'none' }}
+                onClick={() => { setMode('deposit'); setError(''); setOverwriteMode(''); }}
+              >
+                অ্যাডভান্স গ্রহণ / ফেরত
+              </button>
+            </div>
+            <button type="button" onClick={() => resetForm(false)} className="btn btn-outline btn-sm">
+              ফর্ম খালি করুন
+            </button>
+          </div>
         </div>
 
         <div className="card-body">
@@ -294,6 +415,7 @@ export function ShopRentEntryFormView() {
             </div>
           )}
 
+          {mode === 'rent' && (
           <div className="charge-form-grid">
             {/* ---- ১. কোন দোকানের ভাড়া ---- */}
             <div className="charge-field">
@@ -411,6 +533,27 @@ export function ShopRentEntryFormView() {
                 placeholder={String(chargedTotal || 0)}
                 disabled={!canWrite}
               />
+              {/* ভাড়াটিয়ার অ্যাডভান্স (জামানত) জমা থাকলে — কতটা সেখান থেকে কেটে সমন্বয় */}
+              {deposit && (deposit.balance > 0 || adjustNum > 0) && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
+                  <label htmlFor="srf-adjust" style={{ fontSize: '12px', color: 'var(--text-muted)', flexShrink: 0 }}>
+                    অ্যাডভান্স থেকে সমন্বয়
+                  </label>
+                  <input
+                    id="srf-adjust"
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    step="1"
+                    className="form-input"
+                    value={adjustAmount}
+                    onChange={(e) => { setAdjustAmount(e.target.value); setError(''); }}
+                    placeholder="0"
+                    disabled={!canWrite}
+                    style={{ flex: 1, minWidth: 0 }}
+                  />
+                </div>
+              )}
               <span className="charge-field-hint">
                 {canWrite && chargedTotal > 0 ? (
                   <button
@@ -425,6 +568,32 @@ export function ShopRentEntryFormView() {
                 )}
                 {allocation.length > 1 && (
                   <> · মাসওয়ারি: {allocation.map((a) => `${U.monthLabelShort(a.month)} ${U.bnNumber(a.amount)}`).join(', ')}</>
+                )}
+                {deposit && deposit.balance > 0 && (
+                  <>
+                    {' '}· অ্যাডভান্স জমা আছে <b>{U.bnTaka(deposit.balance)}</b>
+                    {deposit.monthlyAdjust > 0 && `, চুক্তিতে মাসে ${U.bnTaka(deposit.monthlyAdjust)} কাটা`}
+                    {canWrite && selectedRentMonths.length > 0 && (
+                      <>
+                        {' '}
+                        <button
+                          type="button"
+                          className="link-btn"
+                          onClick={() => {
+                            // নগদ বাদে যতটা পাওনা বাকি, ততটা অ্যাডভান্স থেকে (জমার মধ্যে)
+                            const due = Math.max(0, chargedTotal - rentNum);
+                            setAdjustAmount(String(Math.min(due, deposit.balance)));
+                            setError('');
+                          }}
+                        >
+                          বাকি পুরোটা অ্যাডভান্স থেকে
+                        </button>
+                      </>
+                    )}
+                  </>
+                )}
+                {adjustAllocation.length > 1 && (
+                  <> · সমন্বয় মাসওয়ারি: {adjustAllocation.map((a) => `${U.monthLabelShort(a.month)} ${U.bnNumber(a.amount)}`).join(', ')}</>
                 )}
               </span>
             </div>
@@ -545,10 +714,199 @@ export function ShopRentEntryFormView() {
                 <li><b>জমার মাস</b> = কোন মাসের ক্যাশে টাকাটা উঠল; <b>ভাড়ার মাস</b> = কোন মাসের ভাড়া। দুটো আলাদা হতে পারে (যেমন নভেম্বরে অক্টোবরের ভাড়া)।</li>
                 <li>এক অঙ্কে কয়েক মাসের ভাড়া দিলে প্রতিটি মাসে তার ধার্য হার, শেষ মাসে বাকিটা — আলাদা সারি হয়ে বসে।</li>
                 <li>বিদ্যুৎ বিল ভাড়ার বকেয়ার হিসাবে ঢোকে না, খতিয়ানে ও রিপোর্টে আলাদা দেখায়।</li>
-                <li>আগে এন্ট্রি থাকা মাসে সংরক্ষণের আগে সতর্ক করা হবে। দোকান যোগ/সম্পাদনা ও পূর্ণ ছক — "দোকান ভাড়া এন্ট্রি" পাতায়।</li>
+                <li>আগে এন্ট্রি থাকা মাসে সংরক্ষণের আগে সতর্ক করা হবে। দোকান যোগ/সম্পাদনা ও পূর্ণ ছক — "দোকানওয়ারি ভাড়ার হিসাব" পাতায়।</li>
+                <li>ভাড়াটিয়ার অ্যাডভান্স (জামানত) জমা থাকলে "অ্যাডভান্স থেকে সমন্বয়" ঘরে কাটার অঙ্ক লিখুন — ভাড়া পরিশোধ ধরা হবে, নগদ ওঠেনি বলে খতিয়ানে স্মারক হিসেবে থাকবে।</li>
               </ul>
             </div>
           </div>
+          )}
+
+          {/* ================= অ্যাডভান্স (জামানত) গ্রহণ / ফেরত ================= */}
+          {mode === 'deposit' && (
+          <div className="charge-form-grid">
+            {/* ---- দোকান ---- */}
+            <div className="charge-field">
+              <label className="charge-field-label" htmlFor="srd-shop">কোন দোকানের অ্যাডভান্স</label>
+              <select
+                id="srd-shop"
+                className="form-select"
+                value={shopId}
+                onChange={(e) => { setShopId(e.target.value); setError(''); }}
+              >
+                <option value="">— দোকান নির্বাচন করুন —</option>
+                {shops.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {Calc.shopLabel(s)}{s.tenantName ? ` — ${s.tenantName}` : ''}
+                  </option>
+                ))}
+              </select>
+              <span className="charge-field-hint">
+                {shop && deposit
+                  ? <>চুক্তির অ্যাডভান্স <b>{U.bnTaka(deposit.agreed)}</b>{deposit.monthlyAdjust > 0 && <>, মাসে {U.bnTaka(deposit.monthlyAdjust)} কাটা</>}{shop.advanceNote ? ` · ${shop.advanceNote}` : ''}</>
+                  : <>মোট {U.bnDigits(shops.length)}টি চালু দোকান; চুক্তির অঙ্ক দোকানের তথ্যে লিখে রাখুন</>}
+              </span>
+            </div>
+
+            {/* ---- জমা আছে (স্বয়ংক্রিয়) ---- */}
+            <div className="charge-field">
+              <label className="charge-field-label" htmlFor="srd-bal">অ্যাডভান্স জমা আছে</label>
+              <input
+                id="srd-bal"
+                type="text"
+                className={`form-input is-auto ${deposit && deposit.balance > 0 ? 'is-advance' : ''}`}
+                value={deposit ? U.bnTaka(deposit.balance) : ''}
+                placeholder="দোকান নির্বাচন করলে এখানে বসবে"
+                readOnly
+                tabIndex={-1}
+              />
+              <span className="charge-field-hint">
+                <Lock size={12} />{' '}
+                {deposit
+                  ? `গ্রহণ ${U.bnTaka(deposit.received)} − ভাড়ায় সমন্বয় ${U.bnTaka(deposit.adjusted)} − ফেরত ${U.bnTaka(deposit.refunded)}`
+                  : 'স্বয়ংক্রিয় — গ্রহণ, সমন্বয় ও ফেরতের হিসাব থেকে'}
+              </span>
+            </div>
+
+            {/* ---- কী লিখছেন ---- */}
+            <div className="charge-field">
+              <span className="charge-field-label">কী লিখছেন</span>
+              <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap', padding: '9px 0' }}>
+                <label className="form-confirm" style={{ margin: 0 }}>
+                  <input
+                    type="radio"
+                    name="srd-kind"
+                    checked={depKind === 'advance'}
+                    onChange={() => { setDepKind('advance'); setOverwriteMode(''); setError(''); }}
+                    disabled={!canWrite}
+                  />
+                  <span>অ্যাডভান্স <b>গ্রহণ</b> (নগদ ঢুকল)</span>
+                </label>
+                <label className="form-confirm" style={{ margin: 0 }}>
+                  <input
+                    type="radio"
+                    name="srd-kind"
+                    checked={depKind === 'advance-refund'}
+                    onChange={() => { setDepKind('advance-refund'); setOverwriteMode(''); setError(''); }}
+                    disabled={!canWrite}
+                  />
+                  <span>অ্যাডভান্স <b>ফেরত</b> (নগদ বেরোল)</span>
+                </label>
+              </div>
+              <span className="charge-field-hint">
+                গ্রহণ খতিয়ানে আলাদা আয়ের সারি, ফেরত খরচের সারি — "দোকানের ভাড়া আদায়" সারিতে নয়
+              </span>
+            </div>
+
+            {/* ---- মাস ---- */}
+            <div className="charge-field">
+              <label className="charge-field-label" htmlFor="srd-month">কোন মাসের হিসাবে (জমার মাস)</label>
+              <select
+                id="srd-month"
+                className="form-select"
+                value={depMonth}
+                onChange={(e) => { setDepMonth(e.target.value); setOverwriteMode(''); setError(''); }}
+                disabled={!canWrite}
+              >
+                {paidMonths.map((m) => (
+                  <option key={m} value={m}>{U.monthLabel(m)}</option>
+                ))}
+              </select>
+              <span className="charge-field-hint">
+                পুরোনো অ্যাডভান্স (আগে নেওয়া) ঢোকাতে সেই পুরোনো মাসটি দিন — শুরুর ব্যালেন্স হিসেবে ধরা হবে
+              </span>
+            </div>
+
+            {/* ---- টাকা ---- */}
+            <div className="charge-field">
+              <label className="charge-field-label" htmlFor="srd-amount">টাকার পরিমাণ</label>
+              <input
+                id="srd-amount"
+                type="number"
+                inputMode="numeric"
+                min="0"
+                step="1"
+                className="form-input"
+                value={depAmount}
+                onChange={(e) => { setDepAmount(e.target.value); setError(''); }}
+                placeholder={deposit && depKind === 'advance' && deposit.agreed > 0 ? String(deposit.agreed) : '0'}
+                disabled={!canWrite}
+              />
+              <span className="charge-field-hint">
+                {canWrite && deposit && depKind === 'advance' && deposit.agreed > deposit.received ? (
+                  <button type="button" className="link-btn" onClick={() => { setDepAmount(String(deposit.agreed - deposit.received)); setError(''); }}>
+                    চুক্তির বাকি {U.bnTaka(deposit.agreed - deposit.received)} বসান
+                  </button>
+                ) : canWrite && deposit && depKind === 'advance-refund' && deposit.balance > 0 ? (
+                  <button type="button" className="link-btn" onClick={() => { setDepAmount(String(deposit.balance)); setError(''); }}>
+                    পুরো জমা {U.bnTaka(deposit.balance)} ফেরত
+                  </button>
+                ) : (
+                  'টাকার অঙ্ক লিখুন'
+                )}
+              </span>
+            </div>
+
+            {/* ---- কে ---- */}
+            <div className="charge-field">
+              <label className="charge-field-label" htmlFor="srd-collector">
+                {depKind === 'advance' ? 'কে গ্রহণ করলেন' : 'কে ফেরত দিলেন'}
+              </label>
+              <select
+                id="srd-collector"
+                className="form-select"
+                value={collectorId}
+                onChange={(e) => { setCollectorId(e.target.value); setError(''); }}
+                disabled={!canWrite}
+              >
+                <option value="">— নির্বাচন করুন —</option>
+                {collectors.map((c) => (
+                  <option key={c.id} value={c.id}>{c.bn || c.en}</option>
+                ))}
+              </select>
+              <span className="charge-field-hint">খতিয়ানের সারিতে এঁর নামে বসবে</span>
+            </div>
+
+            {/* ---- মন্তব্য ---- */}
+            <div className="charge-field">
+              <label className="charge-field-label" htmlFor="srd-note">মন্তব্য (ঐচ্ছিক)</label>
+              <input
+                id="srd-note"
+                type="text"
+                className="form-input"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="যেমন: চুক্তি ০১-০৭-২০২৫; পুরোনো অ্যাডভান্স, আদায়কারীর খাতা অনুযায়ী"
+                disabled={!canWrite}
+              />
+              <span className="charge-field-hint">খতিয়ানের সারির পাশে ও অ্যাডভান্স খাতায় দেখাবে</span>
+            </div>
+
+            {/* ---- এই দোকানের অ্যাডভান্স খাতা / সহায়িকা ---- */}
+            <div className="charge-field charge-help">
+              <div className="charge-help-title">
+                <Info size={14} /> {shop && deposit && deposit.history.length ? `${Calc.shopLabel(shop)}-এর অ্যাডভান্স খাতা` : 'মনে রাখবেন'}
+              </div>
+              {shop && deposit && deposit.history.length ? (
+                <ul>
+                  {deposit.history.map((r) => (
+                    <li key={r.id}>
+                      {U.monthLabelShort(r.rentMonth)}: {Calc.shopKindLabel(r.kind)} <b>{U.bnTaka(r.amount)}</b>
+                      {r.kind === 'advance-adjust' && r.paidMonth !== r.rentMonth ? ` (${U.monthLabelShort(r.paidMonth)} এর হিসাবে)` : ''}
+                      {r.note ? ` — ${r.note}` : ''}
+                    </li>
+                  ))}
+                  <li>এখন জমা আছে <b>{U.bnTaka(deposit.balance)}</b></li>
+                </ul>
+              ) : (
+                <ul>
+                  <li>অ্যাডভান্স ভাড়া নয় — সমিতির কাছে ভাড়াটিয়ার জমা, দোকান ছাড়লে ফেরতযোগ্য।</li>
+                  <li>মাসে মাসে ভাড়া থেকে কাটা হলে সেটি "ভাড়া আদায়" ফর্মে "অ্যাডভান্স থেকে সমন্বয়" ঘরে লিখুন।</li>
+                  <li>কোনো দোকানের পুরোনো অ্যাডভান্স থাকলে পুরোনো মাস দিয়ে এখানে ঢোকান; আগে কাটা অংশ ঐ মাসগুলোর সমন্বয় হিসেবে "দোকানওয়ারি ভাড়ার হিসাব" ছকে।</li>
+                </ul>
+              )}
+            </div>
+          </div>
+          )}
 
           {/* ---- আগে থেকে এন্ট্রি থাকলে সতর্কতা ---- */}
           {hasExisting && (
@@ -557,9 +915,7 @@ export function ShopRentEntryFormView() {
               <div>
                 <div>
                   <b>{Calc.shopLabel(shop)}</b>-এর নির্বাচিত মাসে ইতিমধ্যে এন্ট্রি আছে:{' '}
-                  {existingRent.map((r) => `${U.monthLabelShort(r.rentMonth)} ভাড়া ${U.bnTaka(r.amount)}`).join(', ')}
-                  {existingRent.length > 0 && existingElec.length > 0 ? ', ' : ''}
-                  {existingElec.map((r) => `${U.monthLabelShort(r.rentMonth)} বিদ্যুৎ বিল ${U.bnTaka(r.amount)}`).join(', ')}
+                  {existingLabels.join(', ')}
                   । নতুন অঙ্ক কীভাবে ধরা হবে, বেছে নিন:
                 </div>
                 <label className="form-confirm">
@@ -614,11 +970,23 @@ export function ShopRentEntryFormView() {
                 <span className="s-value">{collectorName(collectorId) || '—'}</span>
               </div>
               <div className="s-item">
-                <span className="s-label">মোট জমা (ভাড়া + বিদ্যুৎ)</span>
-                <span className="s-value" style={{ color: rentNum + elecNum > 0 ? 'var(--success-dark)' : 'var(--text-main)' }}>
-                  {U.bnTaka(rentNum + elecNum)}
+                <span className="s-label">{mode === 'deposit' ? (depKind === 'advance' ? 'অ্যাডভান্স গ্রহণ' : 'অ্যাডভান্স ফেরত') : 'নগদ জমা (ভাড়া + বিদ্যুৎ)'}</span>
+                <span className="s-value" style={{ color: (mode === 'deposit' ? depNum : rentNum + elecNum) > 0 ? 'var(--success-dark)' : 'var(--text-main)' }}>
+                  {U.bnTaka(mode === 'deposit' ? depNum : rentNum + elecNum)}
                 </span>
               </div>
+              {mode === 'rent' && adjustNum > 0 && (
+                <div className="s-item">
+                  <span className="s-label">অ্যাডভান্স থেকে সমন্বয়</span>
+                  <span className="s-value" style={{ color: 'var(--warning-dark)' }}>{U.bnTaka(adjustNum)}</span>
+                </div>
+              )}
+              {deposit && (deposit.received > 0 || deposit.agreed > 0) && (
+                <div className="s-item">
+                  <span className="s-label">অ্যাডভান্স জমা আছে</span>
+                  <span className="s-value" style={{ color: 'var(--warning-dark)' }}>{U.bnTaka(deposit.balance)}</span>
+                </div>
+              )}
               <div className="s-item">
                 <span className="s-label">{status.advance > 0 ? 'বর্তমান অগ্রীম' : 'বর্তমান বকেয়া'}</span>
                 <span
@@ -638,7 +1006,7 @@ export function ShopRentEntryFormView() {
 
         <div className="modal-footer">
           <span className="charge-form-foot-note">
-            জমার তারিখ ধরা হবে {paidMonth ? U.monthLabel(paidMonth) : 'জমার'} মাসের শেষ দিন।
+            জমার তারিখ ধরা হবে {(mode === 'deposit' ? depMonth : paidMonth) ? U.monthLabel(mode === 'deposit' ? depMonth : paidMonth) : 'জমার'} মাসের শেষ দিন।
           </span>
           <button type="button" onClick={() => resetForm(false)} className="btn btn-outline">
             বাতিল

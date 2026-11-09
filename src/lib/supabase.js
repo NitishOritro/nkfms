@@ -160,6 +160,10 @@ export const shopFromRow = (r) => ({
   // ভাড়া বদলের ইতিহাস: [{ fromMonth: '2026-07', rate: 3000 }]
   rentHistory: Array.isArray(r.rent_history) ? r.rent_history : [],
   electricityShare: Number(r.electricity_share) || 0,
+  // অ্যাডভান্স (জামানত) চুক্তি: মোট অঙ্ক, মাসে কত কাটা হবে (০ = কাটা হয় না)
+  advanceAmount: Number(r.advance_amount) || 0,
+  advanceAdjust: Number(r.advance_adjust) || 0,
+  advanceNote: r.advance_note || '',
   active: r.active !== false,
   joinMonth: r.join_month || '',
   closedFrom: r.closed_from || '',
@@ -175,6 +179,9 @@ export const shopToRow = (s) => ({
   monthly_rent: Number(s.monthlyRent) || 0,
   rent_history: Array.isArray(s.rentHistory) && s.rentHistory.length ? s.rentHistory : null,
   electricity_share: Number(s.electricityShare) || 0,
+  advance_amount: Number(s.advanceAmount) || 0,
+  advance_adjust: Number(s.advanceAdjust) || 0,
+  advance_note: s.advanceNote || '',
   active: s.active !== false,
   join_month: s.joinMonth || null,
   closed_from: s.closedFrom || null,
@@ -186,7 +193,8 @@ export const shopRentFromRow = (r) => ({
   shopId: r.shop_id,
   rentMonth: r.rent_month,
   paidMonth: r.paid_month || r.rent_month,
-  kind: r.kind || 'rent',                 // 'rent' | 'electricity' | 'other'
+  // 'rent' | 'electricity' | 'other' | 'advance' | 'advance-adjust' | 'advance-refund'
+  kind: r.kind || 'rent',
   amount: Number(r.amount) || 0,
   collectorId: r.collector_id || '',
   receivedOn: r.received_on || '',

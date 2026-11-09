@@ -296,7 +296,18 @@ export function DashboardView({ setCurrentTab }) {
                         <td><b>{Calc.shopLabel(r.shop)}</b></td>
                         <td>{r.shop.tenantName || '—'}</td>
                         <td style={{ fontSize: '12px' }}>{r.rentMonths.map(U.monthLabelShort).join(', ') || '—'}</td>
-                        <td className="amount">{r.rent ? U.bnTaka(r.rent) : '—'}</td>
+                        <td className="amount">
+                          {r.rent ? U.bnTaka(r.rent) : '—'}
+                          {r.adjust > 0 && (
+                            <div style={{ fontSize: '10.5px', color: '#64748b' }}>+ অ্যাডভান্স সমন্বয় {U.bnNumber(r.adjust)} (নগদ নয়)</div>
+                          )}
+                          {r.deposit > 0 && (
+                            <div style={{ fontSize: '10.5px', color: 'var(--warning-dark)' }}>অ্যাডভান্স গ্রহণ {U.bnNumber(r.deposit)} (আলাদা খাত)</div>
+                          )}
+                          {r.refund > 0 && (
+                            <div style={{ fontSize: '10.5px', color: '#dc2626' }}>অ্যাডভান্স ফেরত {U.bnNumber(r.refund)}</div>
+                          )}
+                        </td>
                         <td className="amount">{r.electricity ? U.bnTaka(r.electricity) : '—'}</td>
                         <td className="amount" style={{ fontWeight: 700, color: 'var(--primary-dark)' }}>
                           {U.bnTaka(r.total)}

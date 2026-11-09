@@ -22,6 +22,9 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
   // পুরোনো কাগজের একত্রিত আদায় (দোকানওয়ারি ভাঙা নেই)
   const legacy = useMemo(() => Calc.shopRentLegacy(data), [data]);
   const legacyTotal = legacy.reduce((s, l) => s + l.amount, 0);
+  // অ্যাডভান্স (জামানত) — সব দোকান মিলিয়ে, আজ পর্যন্ত
+  const deposit = useMemo(() => Calc.shopDepositTotals(data), [data]);
+  const hasDeposit = deposit.received > 0 || deposit.refunded > 0;
 
   const num = (v) => (v ? U.bnNumber(v) : <span style={{ color: '#cbd5e1' }}>—</span>);
 
@@ -82,6 +85,17 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
           <div className="metric-value" style={{ color: 'var(--warning-dark)' }}>{U.bnTaka(monthly.grand.electricity)}</div>
           <div className="metric-sub">দোকানের কারেন্ট বিল বাবদ আদায়</div>
         </div>
+        {/* অ্যাডভান্স (জামানত) — কোনো দোকানে থাকলে তবেই; আয় নয়, ভাড়াটিয়ার জমা */}
+        {(deposit.received > 0 || deposit.refunded > 0) && (
+          <div className="metric-card danger">
+            <div className="metric-label">অ্যাডভান্স (জামানত) জমা আছে</div>
+            <div className="metric-value" style={{ color: 'var(--danger)' }}>{U.bnTaka(deposit.balance)}</div>
+            <div className="metric-sub">
+              {U.bnDigits(deposit.shopCount)} দোকান • গ্রহণ {U.bnTaka(deposit.received)} − ভাড়ায় সমন্বয় {U.bnTaka(deposit.adjusted)}
+              {deposit.refunded > 0 && ` − ফেরত ${U.bnTaka(deposit.refunded)}`}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -96,6 +110,7 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
                   <th className="amount">বিদ্যুৎ বিল</th>
                   <th className="amount">অন্যান্য</th>
                   <th className="amount">মোট</th>
+                  {hasDeposit && <th className="amount" title="অ্যাডভান্স (জামানত) নগদে গ্রহণ (+) / ফেরত (−) — ভাড়ার মোটে নয়">অ্যাডভান্স</th>}
                   <th style={{ width: '60px' }}></th>
                 </tr>
               </thead>
@@ -117,6 +132,15 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
                           {r.rent > 0 && <span>ভাড়া {r.rentMonths.length ? `(${r.rentMonths.map(U.monthLabelShort).join(', ')}) ` : ''}{U.bnNumber(r.rent)}</span>}
                           {r.electricity > 0 && <span>{r.rent > 0 ? ' • ' : ''}বিদ্যুৎ বিল {U.bnNumber(r.electricity)}</span>}
                           {r.other > 0 && <span>{r.rent > 0 || r.electricity > 0 ? ' • ' : ''}অন্যান্য {U.bnNumber(r.other)}</span>}
+                          {r.adjust > 0 && (
+                            <span style={{ color: '#64748b' }}>{r.total > 0 ? ' • ' : ''}অ্যাডভান্স থেকে সমন্বয় {U.bnNumber(r.adjust)} (নগদ নয়)</span>
+                          )}
+                          {r.deposit > 0 && (
+                            <span style={{ color: 'var(--warning-dark)' }}>{r.total > 0 || r.adjust > 0 ? ' • ' : ''}অ্যাডভান্স গ্রহণ {U.bnNumber(r.deposit)}</span>
+                          )}
+                          {r.refund > 0 && (
+                            <span style={{ color: '#dc2626' }}>{r.total > 0 || r.adjust > 0 || r.deposit > 0 ? ' • ' : ''}অ্যাডভান্স ফেরত {U.bnNumber(r.refund)}</span>
+                          )}
                           {r.notes.length > 0 && (
                             <div style={{ fontSize: '11px', color: '#64748b' }}>{r.notes.join('; ')}</div>
                           )}
@@ -127,6 +151,13 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
                     <td className="amount">{num(m.totals.electricity)}</td>
                     <td className="amount">{num(m.totals.other)}</td>
                     <td className="amount" style={{ fontWeight: 700, color: 'var(--success)' }}>{m.totals.total ? U.bnNumber(m.totals.total) : <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                    {hasDeposit && (
+                      <td className="amount">
+                        {m.totals.deposit > 0 && <div style={{ color: 'var(--warning-dark)' }}>+{U.bnNumber(m.totals.deposit)}</div>}
+                        {m.totals.refund > 0 && <div style={{ color: '#dc2626' }}>−{U.bnNumber(m.totals.refund)}</div>}
+                        {!m.totals.deposit && !m.totals.refund && <span style={{ color: '#cbd5e1' }}>—</span>}
+                      </td>
+                    )}
                     <td>
                       {onOpenPrint && m.rows.length > 0 && (
                         <button className="btn-icon" title={`${U.monthLabel(m.month)} এর রিপোর্ট ছাপুন`} onClick={() => printMonth(m.month)}>
@@ -137,7 +168,7 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan="7" className="empty-state">
+                    <td colSpan={hasDeposit ? 8 : 7} className="empty-state">
                       <div className="empty-state-icon"><Inbox size={24} /></div>
                       <div className="empty-state-title">এখনো কোনো মাসে দোকান ভাড়ার এন্ট্রি নেই</div>
                       {!isReadOnly && onOpenEntry && (
@@ -157,6 +188,12 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
                     <td className="amount">{U.bnNumber(monthly.grand.electricity)}</td>
                     <td className="amount">{U.bnNumber(monthly.grand.other)}</td>
                     <td className="amount" style={{ color: 'var(--success)' }}>{U.bnNumber(monthly.grand.total)}</td>
+                    {hasDeposit && (
+                      <td className="amount" style={{ fontSize: '11.5px' }}>
+                        <div style={{ color: 'var(--warning-dark)' }}>+{U.bnNumber(monthly.grand.deposit)}</div>
+                        {monthly.grand.refund > 0 && <div style={{ color: '#dc2626' }}>−{U.bnNumber(monthly.grand.refund)}</div>}
+                      </td>
+                    )}
                     <td></td>
                   </tr>
                   {/* পুরোনো কাগজের একত্রিত আদায় — মাসওয়ারি তালিকার নিচে আলাদা করে */}
@@ -169,6 +206,7 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
                       <td style={{ fontSize: '12px' }}>{l.label}</td>
                       <td className="amount" colSpan="3"></td>
                       <td className="amount" style={{ fontWeight: 700 }}>{U.bnNumber(l.amount)}</td>
+                      {hasDeposit && <td></td>}
                       <td></td>
                     </tr>
                   ))}
@@ -176,6 +214,7 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
                     <tr style={{ fontWeight: 700, background: 'var(--bg-muted)' }}>
                       <td colSpan="5">সর্বমোট (পূর্বের একত্রিত {U.bnNumber(legacyTotal)} সহ)</td>
                       <td className="amount" style={{ color: 'var(--primary-dark)' }}>{U.bnNumber(monthly.grand.total + legacyTotal)}</td>
+                      {hasDeposit && <td></td>}
                       <td></td>
                     </tr>
                   )}
