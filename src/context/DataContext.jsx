@@ -342,6 +342,21 @@ export function DataProvider({ children }) {
     advanceAmount: Number(s.advanceAmount) || 0,
     advanceAdjust: Number(s.advanceAdjust) || 0,
     advanceNote: (s.advanceNote || '').trim(),
+    // ভাড়াটিয়ার ইতিহাস — শুরুর মাস ছাড়া সারি বাদ, শুরুর মাস অনুযায়ী সাজানো
+    tenancies: (Array.isArray(s.tenancies) ? s.tenancies : [])
+      .filter((t) => t && /^\d{4}-\d{2}$/.test(t.fromMonth || ''))
+      .map((t) => ({
+        id: t.id || newId('t'),
+        tenantName: (t.tenantName || '').trim(),
+        phone: (t.phone || '').trim(),
+        fromMonth: t.fromMonth,
+        toMonth: /^\d{4}-\d{2}$/.test(t.toMonth || '') ? t.toMonth : '',
+        rent: Number(t.rent) || 0,
+        advanceAmount: Number(t.advanceAmount) || 0,
+        advanceAdjust: Number(t.advanceAdjust) || 0,
+        note: (t.note || '').trim()
+      }))
+      .sort((a, b) => U.monthIndex(a.fromMonth) - U.monthIndex(b.fromMonth)),
     active: s.active !== false,
     joinMonth: s.joinMonth || '',
     closedFrom: s.closedFrom || '',
@@ -410,6 +425,7 @@ export function DataProvider({ children }) {
         amount,
         collectorId: e.collectorId || '',
         receivedOn: e.receivedOn || U.monthEndIso(e.paidMonth || e.rentMonth),
+        tenancyId: e.tenancyId || (existing ? existing.tenancyId || '' : ''),
         note: (e.note || '').trim()
       });
     });

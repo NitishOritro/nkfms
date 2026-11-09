@@ -67,8 +67,21 @@ export function ShopRentEntryFormView() {
   const shops = useMemo(() => Calc.shopsSorted(data), [data]);
   const collectors = data.settings.collectors || [];
   const shop = shops.find((s) => s.id === shopId) || null;
-  // এই দোকানের অ্যাডভান্স (জামানত) খাতা — আজ পর্যন্ত: গ্রহণ − সমন্বয় − ফেরত
-  const deposit = useMemo(() => (shop ? Calc.shopDeposit(data, shop) : null), [data, shop]);
+  // ভাড়াটিয়ার ইতিহাস থাকলে — কার খাতায় লিখছি (ডিফল্ট বর্তমানজন)
+  const tenancies = useMemo(() => (shop ? Calc.shopTenancies(shop) : []), [shop]);
+  const [tenancyId, setTenancyId] = useState('');
+  useEffect(() => {
+    const cur = shop ? Calc.shopCurrentTenancy(shop) : null;
+    setTenancyId(cur ? cur.id : '');
+  }, [shop]);
+  const tenancy = tenancies.find((t) => t.id === tenancyId) || null;
+  // এই দোকানের (এই ভাড়াটিয়ার) অ্যাডভান্স খাতা — আজ পর্যন্ত: গ্রহণ − সমন্বয় − ফেরত
+  const deposit = useMemo(
+    () => (shop ? Calc.shopDeposit(data, shop, undefined, tenancy || undefined) : null),
+    [data, shop, tenancy]
+  );
+  // অন্য (আগের) ভাড়াটিয়াদের খাতা — ফেরত বাকি থাকলে চোখে পড়ুক
+  const depositByTenancy = useMemo(() => (shop ? Calc.shopDepositByTenancy(data, shop) : []), [data, shop]);
 
   // জমার মাস — সার্ভিস চার্জ ফর্মের মতোই, শুরুর মাস থেকে চলতি মাস পর্যন্ত
   const paidMonths = useMemo(() => Calc.monthOptions(data), [data]);
@@ -99,7 +112,7 @@ export function ShopRentEntryFormView() {
     setToMonth(first);
     setOverwriteMode('');
     // চুক্তিতে মাসে কাটার হার থাকলে ও অ্যাডভান্স জমা থাকলে সেটি নিজে বসে (বদলানো যায়)
-    const dep = Calc.shopDeposit(data, shop);
+    const dep = Calc.shopDeposit(data, shop, undefined, Calc.shopCurrentTenancy(shop) || undefined);
     setAdjustAmount(dep.balance > 0 && dep.monthlyAdjust > 0 ? String(Math.min(dep.monthlyAdjust, dep.balance)) : '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopId]);
@@ -266,7 +279,8 @@ export function ShopRentEntryFormView() {
       }
       saveShopRents([{
         shopId: shop.id, rentMonth: depMonth, kind: depKind, amount,
-        paidMonth: depMonth, collectorId, note: note.trim()
+        paidMonth: depMonth, collectorId, note: note.trim(),
+        tenancyId: tenancy ? tenancy.id : ''
       }]);
       addToast(
         `${Calc.shopLabel(shop)} — ${U.monthLabel(depMonth)} মাসের হিসাবে অ্যাডভান্স ${depKind === 'advance' ? 'গ্রহণ' : 'ফেরত'} ${U.bnTaka(depNum)} সংরক্ষিত হয়েছে।`,
@@ -329,7 +343,8 @@ export function ShopRentEntryFormView() {
       const amount = prev && overwriteMode === 'add' ? Number(prev.amount) + a.amount : a.amount;
       entries.push({
         shopId: shop.id, rentMonth: a.month, kind: 'advance-adjust', amount,
-        paidMonth, collectorId, note: trimmedNote
+        paidMonth, collectorId, note: trimmedNote,
+        tenancyId: (Calc.shopTenancyFor(shop, a.month) || tenancy || {}).id || ''
       });
     });
     saveShopRents(entries);
@@ -429,7 +444,7 @@ export function ShopRentEntryFormView() {
                 <option value="">— দোকান নির্বাচন করুন —</option>
                 {shops.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {Calc.shopLabel(s)} ভাড়া আদায়{s.tenantName ? ` — ${s.tenantName}` : ''}
+                    {Calc.shopLabel(s)} ভাড়া আদায়{Calc.shopTenantName(s) ? ` — ${Calc.shopTenantName(s)}` : ''}
                   </option>
                 ))}
               </select>
@@ -736,13 +751,29 @@ export function ShopRentEntryFormView() {
                 <option value="">— দোকান নির্বাচন করুন —</option>
                 {shops.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {Calc.shopLabel(s)}{s.tenantName ? ` — ${s.tenantName}` : ''}
+                    {Calc.shopLabel(s)}{Calc.shopTenantName(s) ? ` — ${Calc.shopTenantName(s)}` : ''}
                   </option>
                 ))}
               </select>
+              {/* একাধিক ভাড়াটিয়া থাকলে — কার অ্যাডভান্স */}
+              {tenancies.length > 0 && (
+                <select
+                  className="form-select"
+                  value={tenancyId}
+                  onChange={(e) => { setTenancyId(e.target.value); setOverwriteMode(''); setError(''); }}
+                  style={{ marginTop: '8px' }}
+                  title="কোন ভাড়াটিয়ার অ্যাডভান্স"
+                >
+                  {tenancies.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.tenantName || 'নামহীন'} — {U.monthLabelShort(t.fromMonth)} হতে {t.toMonth ? U.monthLabelShort(t.toMonth) : 'চলছে'}
+                    </option>
+                  ))}
+                </select>
+              )}
               <span className="charge-field-hint">
                 {shop && deposit
-                  ? <>চুক্তির অ্যাডভান্স <b>{U.bnTaka(deposit.agreed)}</b>{deposit.monthlyAdjust > 0 && <>, মাসে {U.bnTaka(deposit.monthlyAdjust)} কাটা</>}{shop.advanceNote ? ` · ${shop.advanceNote}` : ''}</>
+                  ? <>চুক্তির অ্যাডভান্স <b>{U.bnTaka(deposit.agreed)}</b>{deposit.monthlyAdjust > 0 && <>, মাসে {U.bnTaka(deposit.monthlyAdjust)} কাটা</>}{(tenancy ? tenancy.note : shop.advanceNote) ? ` · ${tenancy ? tenancy.note : shop.advanceNote}` : ''}</>
                   : <>মোট {U.bnDigits(shops.length)}টি চালু দোকান; চুক্তির অঙ্ক দোকানের তথ্যে লিখে রাখুন</>}
               </span>
             </div>
@@ -886,6 +917,18 @@ export function ShopRentEntryFormView() {
               <div className="charge-help-title">
                 <Info size={14} /> {shop && deposit && deposit.history.length ? `${Calc.shopLabel(shop)}-এর অ্যাডভান্স খাতা` : 'মনে রাখবেন'}
               </div>
+              {/* একাধিক ভাড়াটিয়া: প্রত্যেকের খাতার ব্যালেন্স — আগেরজনের ফেরত বাকি থাকলে লাল */}
+              {depositByTenancy.length > 1 && (
+                <ul style={{ marginBottom: '6px' }}>
+                  {depositByTenancy.map((d) => (
+                    <li key={d.tenancy.id} style={{ color: d.tenancy.toMonth && d.balance > 0 ? '#b91c1c' : undefined }}>
+                      {d.tenancy.tenantName || 'নামহীন'} ({U.monthLabelShort(d.tenancy.fromMonth)} হতে {d.tenancy.toMonth ? U.monthLabelShort(d.tenancy.toMonth) : 'চলছে'}):
+                      জমা আছে <b>{U.bnTaka(d.balance)}</b>
+                      {d.tenancy.toMonth && d.balance > 0 ? ' — ছেড়ে গেছেন, ফেরত বাকি' : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {shop && deposit && deposit.history.length ? (
                 <ul>
                   {deposit.history.map((r) => (
@@ -953,7 +996,7 @@ export function ShopRentEntryFormView() {
               </div>
               <div className="s-item">
                 <span className="s-label">ভাড়াটিয়া</span>
-                <span className="s-value">{shop.tenantName || '—'}</span>
+                <span className="s-value">{Calc.shopTenantName(shop, mode === 'deposit' ? depMonth : (fromMonth || paidMonth)) || '—'}</span>
               </div>
               <div className="s-item">
                 <span className="s-label">ভাড়ার মাস</span>

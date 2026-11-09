@@ -35,10 +35,16 @@ const emptyShop = (serial) => ({
   advanceAmount: '',
   advanceAdjust: '',
   advanceNote: '',
+  tenancies: [],
   active: true,
   joinMonth: U.currentMonth(),
   closedFrom: '',
   note: ''
+});
+
+const emptyTenancy = () => ({
+  id: `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+  tenantName: '', phone: '', fromMonth: '', toMonth: '', rent: '', advanceAmount: '', advanceAdjust: '', note: ''
 });
 
 /* --------------------------------------------------------------------------
@@ -49,6 +55,26 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions }) {
   const history = draft.rentHistory || [];
   const setHist = (i, patch) =>
     set({ rentHistory: history.map((h, idx) => (idx === i ? { ...h, ...patch } : h)) });
+  // ভাড়াটিয়ার ইতিহাস — থাকলে নাম/শুরু/বন্ধ/অ্যাডভান্সের সাধারণ ঘরগুলো আর ব্যবহৃত হয় না
+  const tenancies = draft.tenancies || [];
+  const hasTen = tenancies.length > 0;
+  const setTen = (i, patch) =>
+    set({ tenancies: tenancies.map((t, idx) => (idx === i ? { ...t, ...patch } : t)) });
+  // বর্তমান সাধারণ ঘরগুলো থেকে প্রথম ভাড়াটিয়ার সারি
+  const startTenancies = () =>
+    set({
+      tenancies: [{
+        ...emptyTenancy(),
+        tenantName: draft.tenantName || '',
+        phone: draft.phone || '',
+        fromMonth: draft.joinMonth || '',
+        toMonth: draft.closedFrom ? U.addMonths(draft.closedFrom, -1) : '',
+        rent: draft.monthlyRent || '',
+        advanceAmount: draft.advanceAmount || '',
+        advanceAdjust: draft.advanceAdjust || '',
+        note: draft.advanceNote || ''
+      }]
+    });
 
   const field = { marginBottom: '10px' };
 
@@ -70,11 +96,13 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions }) {
           <input className="form-input" value={draft.shopNo} autoFocus placeholder="যেমন: ২"
             onChange={(e) => set({ shopNo: e.target.value })} />
         </div>
+        {!hasTen && (
         <div className="form-group" style={field}>
           <label className="form-label">ভাড়াটিয়ার নাম</label>
           <input className="form-input" value={draft.tenantName}
             onChange={(e) => set({ tenantName: e.target.value })} />
         </div>
+        )}
         <div className="form-group" style={field}>
           <label className="form-label">মোবাইল</label>
           <input className="form-input" value={draft.phone}
@@ -92,6 +120,7 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions }) {
             onChange={(e) => set({ electricityShare: e.target.value })} />
           <div className="form-hint">এন্ট্রির ঘরে ডিফল্ট হিসেবে বসে; না থাকলে ০।</div>
         </div>
+        {!hasTen && (<>
         <div className="form-group" style={field}>
           <label className="form-label">অ্যাডভান্স (জামানত) — চুক্তির অঙ্ক</label>
           <input className="form-input" type="number" min="0" value={draft.advanceAmount}
@@ -123,6 +152,60 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions }) {
             <option value="">— চালু আছে —</option>
             {monthOptions.map((m) => <option key={m} value={m}>{U.monthLabel(m)}</option>)}
           </select>
+        </div>
+        </>)}
+      </div>
+
+      {/* ভাড়াটিয়ার ইতিহাস — কে কোন মাস থেকে কোন মাস; মাঝের ফাঁক = দোকান ফাঁকা */}
+      <div style={{ marginBottom: '12px', padding: '10px 12px', border: '1px dashed #cbd5e1', borderRadius: '8px', background: '#fff' }}>
+        <label className="form-label">ভাড়াটিয়ার ইতিহাস {hasTen ? '' : '(ঐচ্ছিক)'}</label>
+        <div className="form-hint" style={{ marginBottom: '8px' }}>
+          {hasTen
+            ? 'এই তালিকাই ভাড়া ধার্যের ভিত্তি: সময়কালের বাইরের মাসে দোকান ফাঁকা — বকেয়া ধরা হয় না। "পর্যন্ত" খালি = এখনো আছেন। ভাড়া খালি রাখলে দোকানের সাধারণ হার।'
+            : 'দোকান কখনো ফাঁকা থেকে আবার ভাড়া হলে, বা ভাড়াটিয়া বদলালে এখানে প্রত্যেকের সময়কাল লিখুন। তালিকা থাকলে উপরের নাম/শুরু/বন্ধ/অ্যাডভান্স ঘরগুলোর বদলে এটিই ব্যবহৃত হয়।'}
+        </div>
+        {tenancies.map((t, i) => (
+          <div key={t.id || i} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px 8px', alignItems: 'center', marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #e2e8f0' }}>
+            <input className="form-input" value={t.tenantName || ''} placeholder="ভাড়াটিয়ার নাম"
+              onChange={(e) => setTen(i, { tenantName: e.target.value })} />
+            <input className="form-input" value={t.phone || ''} placeholder="মোবাইল"
+              onChange={(e) => setTen(i, { phone: e.target.value })} />
+            <select className="form-input" value={t.fromMonth || ''} onChange={(e) => setTen(i, { fromMonth: e.target.value })}>
+              <option value="">— হতে * —</option>
+              {monthOptions.map((m) => <option key={m} value={m}>{U.monthLabel(m)} হতে</option>)}
+            </select>
+            <select className="form-input" value={t.toMonth || ''} onChange={(e) => setTen(i, { toMonth: e.target.value })}>
+              <option value="">— এখনো আছেন —</option>
+              {monthOptions.filter((m) => !t.fromMonth || U.monthIndex(m) >= U.monthIndex(t.fromMonth)).map((m) => (
+                <option key={m} value={m}>{U.monthLabel(m)} পর্যন্ত</option>
+              ))}
+            </select>
+            <input className="form-input" type="number" min="0" value={t.rent ?? ''} placeholder="মাসিক ভাড়া"
+              style={{ textAlign: 'right' }} onChange={(e) => setTen(i, { rent: e.target.value })} />
+            <input className="form-input" type="number" min="0" value={t.advanceAmount ?? ''} placeholder="অ্যাডভান্স (চুক্তি)"
+              style={{ textAlign: 'right' }} onChange={(e) => setTen(i, { advanceAmount: e.target.value })} />
+            <input className="form-input" type="number" min="0" value={t.advanceAdjust ?? ''} placeholder="মাসে কাটা"
+              style={{ textAlign: 'right' }} onChange={(e) => setTen(i, { advanceAdjust: e.target.value })} />
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <input className="form-input" value={t.note || ''} placeholder="শর্ত / মন্তব্য" style={{ flex: 1 }}
+                onChange={(e) => setTen(i, { note: e.target.value })} />
+              <button type="button" className="btn-icon" style={{ color: '#dc2626' }} title="এই ভাড়াটিয়া বাদ দিন"
+                onClick={() => set({ tenancies: tenancies.filter((_, x) => x !== i) })}>
+                <Trash2 size={15} />
+              </button>
+            </div>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {!hasTen && (
+            <button type="button" className="btn btn-outline btn-sm" onClick={startTenancies}>
+              <Plus size={14} /> উপরের তথ্য থেকে প্রথম ভাড়াটিয়া
+            </button>
+          )}
+          <button type="button" className="btn btn-outline btn-sm"
+            onClick={() => set({ tenancies: [...tenancies, emptyTenancy()] })}>
+            <Plus size={14} /> {hasTen ? 'নতুন ভাড়াটিয়া যোগ করুন' : 'খালি সারি যোগ করুন'}
+          </button>
         </div>
       </div>
 
@@ -333,7 +416,8 @@ export function ShopRentView({ onOpenPrint }) {
     advanceAmount: String(shop.advanceAmount || ''),
     advanceAdjust: String(shop.advanceAdjust || ''),
     advanceNote: shop.advanceNote || '',
-    rentHistory: (shop.rentHistory || []).map((h) => ({ ...h }))
+    rentHistory: (shop.rentHistory || []).map((h) => ({ ...h })),
+    tenancies: (shop.tenancies || []).map((t) => ({ ...t }))
   });
   const submitShop = () => {
     const saved = saveShop(shopDraft);
@@ -438,7 +522,7 @@ export function ShopRentView({ onOpenPrint }) {
                 {monthSummary.rows.length ? monthSummary.rows.map((r) => (
                   <tr key={r.shop.id}>
                     <td><b>{Calc.shopLabel(r.shop)}</b></td>
-                    <td>{r.shop.tenantName || <span style={{ color: '#94a3b8' }}>—</span>}</td>
+                    <td>{Calc.shopTenantName(r.shop, r.rentMonths[0] || selectedMonth) || <span style={{ color: '#94a3b8' }}>—</span>}</td>
                     <td style={{ fontSize: '12px' }}>
                       {r.rentMonths.map(U.monthLabelShort).join(', ') || '—'}
                       {r.notes.length > 0 && (
@@ -495,7 +579,9 @@ export function ShopRentView({ onOpenPrint }) {
                 onClick={() => setSelectedShopId(s.id)}
               >
                 <span className="sp-no">{Calc.shopLabel(s)}</span>
-                <span className="sp-name">{s.tenantName || 'ভাড়াটিয়ার নাম নেই'}</span>
+                <span className="sp-name">
+                  {Calc.shopTenantName(s) || (Calc.shopTenancies(s).length && !Calc.shopTenancyFor(s, currentMonth) ? 'এখন ফাঁকা' : 'ভাড়াটিয়ার নাম নেই')}
+                </span>
                 <span className={`sp-due${st.due > 0 ? ' has-due' : ''}`}>
                   {st.due > 0 ? `বকেয়া ৳${U.bnNumber(st.due)}` : st.advance > 0 ? `অগ্রীম ৳${U.bnNumber(st.advance)}` : 'বকেয়া নেই'}
                 </span>
@@ -524,9 +610,31 @@ export function ShopRentView({ onOpenPrint }) {
                 {U.bnTaka(Calc.shopRentForMonth(shop, currentMonth))}
               </div>
               <div className="metric-sub">
-                {shop.tenantName || 'ভাড়াটিয়ার নাম নেই'}{shop.phone ? ` • ${U.bnDigits(shop.phone)}` : ''}
-                {' • '}{U.monthLabelShort(Calc.shopStartMonth(shop, data.settings))} থেকে
-                {shop.closedFrom ? ` ${U.monthLabelShort(shop.closedFrom)} পর্যন্ত বন্ধ` : ''}
+                {Calc.shopTenancies(shop).length ? (
+                  <>
+                    {/* ভাড়াটিয়ার ইতিহাস — প্রত্যেকের সময়কাল, মাঝে ফাঁকা মাস */}
+                    {Calc.shopTenancies(shop).map((t, i) => (
+                      <div key={t.id || i}>
+                        {t.tenantName || 'নামহীন'}{t.phone ? ` • ${U.bnDigits(t.phone)}` : ''}
+                        {' — '}{U.monthLabelShort(t.fromMonth)} হতে {t.toMonth ? U.monthLabelShort(t.toMonth) : 'চলছে'}
+                        {Number(t.rent) > 0 ? ` • ভাড়া ${U.bnTaka(t.rent)}` : ''}
+                        {Number(t.advanceAmount) > 0 ? ` • অ্যাডভান্স ${U.bnTaka(t.advanceAmount)}` : ''}
+                      </div>
+                    ))}
+                    {(() => {
+                      const vac = Calc.shopVacantMonths(shop, data.settings, currentMonth);
+                      return vac.length
+                        ? <div style={{ color: '#b45309' }}>ফাঁকা ছিল {U.bnDigits(vac.length)} মাস: {vac.slice(0, 6).map(U.monthLabelShort).join(', ')}{vac.length > 6 ? ' …' : ''} — বকেয়া নয়</div>
+                        : null;
+                    })()}
+                  </>
+                ) : (
+                  <>
+                    {shop.tenantName || 'ভাড়াটিয়ার নাম নেই'}{shop.phone ? ` • ${U.bnDigits(shop.phone)}` : ''}
+                    {' • '}{U.monthLabelShort(Calc.shopStartMonth(shop, data.settings))} থেকে
+                    {shop.closedFrom ? ` ${U.monthLabelShort(shop.closedFrom)} পর্যন্ত বন্ধ` : ''}
+                  </>
+                )}
               </div>
               {!isReadOnly && (
                 <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
@@ -621,8 +729,15 @@ export function ShopRentView({ onOpenPrint }) {
                           <td>
                             <b>{U.monthLabel(m)}</b>
                             {isCurrent && <div style={{ fontSize: '10.5px', color: '#64748b' }}>চলতি মাস</div>}
+                            {row?.tenancy?.tenantName && <div style={{ fontSize: '10.5px', color: '#64748b' }}>{row.tenancy.tenantName}</div>}
                           </td>
-                          <td className="amount">{row && row.charge ? U.bnNumber(row.charge) : <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                          <td className="amount">
+                            {row && row.charge
+                              ? U.bnNumber(row.charge)
+                              : row && row.vacant
+                                ? <span style={{ color: '#b45309', fontSize: '11px' }} title="এ মাসে দোকান ফাঁকা ছিল — বকেয়া নয়">ফাঁকা</span>
+                                : <span style={{ color: '#cbd5e1' }}>—</span>}
+                          </td>
                           {KINDS.map((k) => (
                             <td key={k} className="amount">
                               {isReadOnly ? (

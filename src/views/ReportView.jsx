@@ -1363,8 +1363,8 @@ export function ReportView({
                   {shopMatrix.rows.map((r) => (
                     <th key={r.shop.id} colSpan={2} className="th-paid grp">
                       {U.bnDigits(r.shop.shopNo)}নং দোকান
-                      {r.shop.tenantName && (
-                        <div style={{ fontSize: '8.5px', fontWeight: 400, color: '#475569' }}>{r.shop.tenantName}</div>
+                      {Calc.shopTenantName(r.shop, selectedMonth) && (
+                        <div style={{ fontSize: '8.5px', fontWeight: 400, color: '#475569' }}>{Calc.shopTenantName(r.shop, selectedMonth)}</div>
                       )}
                     </th>
                   ))}

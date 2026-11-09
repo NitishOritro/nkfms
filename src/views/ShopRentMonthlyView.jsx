@@ -128,7 +128,7 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
                       {m.rows.map((r) => (
                         <div key={r.shop.id} className="shop-monthly-line">
                           <b>{Calc.shopLabel(r.shop)}</b>
-                          {r.shop.tenantName ? ` (${r.shop.tenantName})` : ''}:{' '}
+                          {Calc.shopTenantName(r.shop, r.rentMonths[0] || m.month) ? ` (${Calc.shopTenantName(r.shop, r.rentMonths[0] || m.month)})` : ''}:{' '}
                           {r.rent > 0 && <span>ভাড়া {r.rentMonths.length ? `(${r.rentMonths.map(U.monthLabelShort).join(', ')}) ` : ''}{U.bnNumber(r.rent)}</span>}
                           {r.electricity > 0 && <span>{r.rent > 0 ? ' • ' : ''}বিদ্যুৎ বিল {U.bnNumber(r.electricity)}</span>}
                           {r.other > 0 && <span>{r.rent > 0 || r.electricity > 0 ? ' • ' : ''}অন্যান্য {U.bnNumber(r.other)}</span>}

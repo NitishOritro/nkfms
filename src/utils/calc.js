@@ -503,8 +503,70 @@ export function shopLabel(shop) {
   return `${U.bnDigits(shop.shopNo)}নং দোকান`;
 }
 
-/** নির্দিষ্ট মাসে এই দোকানের ধার্য মাসিক ভাড়া (rentHistory থাকলে সেটিই অগ্রাধিকার) */
+/* ---- ভাড়াটিয়ার ইতিহাস (tenancies) ----
+   একটি দোকানে পরপর একাধিক ভাড়াটিয়া থাকতে পারে, মাঝে দোকান ফাঁকা।
+   তালিকা থাকলে কেবল সময়কালের মাসগুলোতেই ভাড়া ধার্য; ফাঁকা মাস বকেয়া নয়।
+   তালিকা খালি থাকলে পুরোনো নিয়ম: joinMonth → closedFrom, একটিই tenantName। */
+
+/** ভাড়াটিয়ার তালিকা, শুরুর মাস অনুযায়ী সাজানো (কেবল বৈধ fromMonth) */
+export function shopTenancies(shop) {
+  const list = Array.isArray(shop.tenancies) ? shop.tenancies : [];
+  return list
+    .filter((t) => t && /^\d{4}-\d{2}$/.test(t.fromMonth || ''))
+    .slice()
+    .sort((a, b) => U.monthIndex(a.fromMonth) - U.monthIndex(b.fromMonth));
+}
+
+/** ঐ মাসে কে ভাড়ায় ছিলেন — tenancy বা null (খালি তালিকায় সবসময় null) */
+export function shopTenancyFor(shop, month) {
+  const i = U.monthIndex(month);
+  return (
+    shopTenancies(shop).find(
+      (t) => i >= U.monthIndex(t.fromMonth) && (!t.toMonth || i <= U.monthIndex(t.toMonth))
+    ) || null
+  );
+}
+
+/** বর্তমান ভাড়াটিয়া (চলমান সময়কাল), না থাকলে শেষজন; খালি তালিকায় null */
+export function shopCurrentTenancy(shop, asOfMonth) {
+  const list = shopTenancies(shop);
+  if (!list.length) return null;
+  const m = asOfMonth || U.currentMonth();
+  return shopTenancyFor(shop, m) || list.filter((t) => U.monthIndex(t.fromMonth) <= U.monthIndex(m)).pop() || list[0];
+}
+
+/** ঐ মাসের ভাড়াটিয়ার নাম — ইতিহাস না থাকলে দোকানের সাধারণ নাম */
+export function shopTenantName(shop, month) {
+  if (!shop) return '';
+  const t = month ? shopTenancyFor(shop, month) : shopCurrentTenancy(shop);
+  if (t) return t.tenantName || '';
+  if (shopTenancies(shop).length) return '';
+  return shop.tenantName || '';
+}
+
+/**
+ * অ্যাডভান্সের সারিটি (rentMonth) কোন ভাড়াটিয়ার খাতায় — সময়কালের ভেতরে
+ * হলে তাঁর; বাইরে হলে (যেমন ছাড়ার পরের মাসে ফেরত) তার আগের সর্বশেষজনের।
+ */
+export function shopTenancyForDeposit(shop, month, row) {
+  const list = shopTenancies(shop);
+  if (!list.length) return null;
+  // সারিতে ভাড়াটিয়ার id লেখা থাকলে সেটিই (ফর্ম থেকে লেখা হলে থাকে)
+  if (row && row.tenancyId) {
+    const byId = list.find((t) => t.id === row.tenancyId);
+    if (byId) return byId;
+  }
+  const inside = shopTenancyFor(shop, month);
+  if (inside) return inside;
+  const i = U.monthIndex(month);
+  return list.filter((t) => U.monthIndex(t.fromMonth) <= i).pop() || list[0];
+}
+
+/** নির্দিষ্ট মাসে এই দোকানের ধার্য মাসিক ভাড়া — ভাড়াটিয়ার চুক্তির হার, নইলে
+ *  rentHistory, নইলে monthlyRent */
 export function shopRentForMonth(shop, month) {
+  const t = shopTenancyFor(shop, month);
+  if (t && Number(t.rent) > 0) return Number(t.rent);
   const history = Array.isArray(shop.rentHistory) ? shop.rentHistory : [];
   const idx = U.monthIndex(month);
   let rate = null;
@@ -517,20 +579,31 @@ export function shopRentForMonth(shop, month) {
   return rate == null ? Number(shop.monthlyRent) || 0 : rate;
 }
 
-/** কোন মাস থেকে ভাড়া ধরা হবে */
+/** কোন মাস থেকে ভাড়া ধরা হবে — প্রথম ভাড়াটিয়ার শুরু, নইলে joinMonth */
 export function shopStartMonth(shop, settings) {
+  const list = shopTenancies(shop);
+  if (list.length) return list[0].fromMonth;
   return shop.joinMonth || settings.startMonth || '2024-08';
 }
 
-/** কোন মাস পর্যন্ত ভাড়া ধরা হবে (closedFrom থাকলে তার আগের মাস) */
+/** কোন মাস পর্যন্ত ভাড়া ধরা হবে — শেষ ভাড়াটিয়ার শেষ মাস (চলমান হলে asOfMonth),
+ *  ইতিহাস না থাকলে closedFrom-এর আগের মাস */
 export function shopEndMonth(shop, asOfMonth) {
+  const list = shopTenancies(shop);
+  if (list.length) {
+    const last = list[list.length - 1];
+    if (last.toMonth && U.monthIndex(last.toMonth) < U.monthIndex(asOfMonth)) return last.toMonth;
+    return asOfMonth;
+  }
   if (shop.closedFrom && U.monthIndex(shop.closedFrom) <= U.monthIndex(asOfMonth)) {
     return U.addMonths(shop.closedFrom, -1);
   }
   return asOfMonth;
 }
 
+/** ঐ মাসে দোকানটি ভাড়ায় ছিল কি না (ফাঁকা মাসে ভাড়া ধার্য হয় না) */
 export function shopIsChargeable(shop, settings, month) {
+  if (shopTenancies(shop).length) return !!shopTenancyFor(shop, month);
   const i = U.monthIndex(month);
   return (
     i >= U.monthIndex(shopStartMonth(shop, settings)) &&
@@ -538,13 +611,29 @@ export function shopIsChargeable(shop, settings, month) {
   );
 }
 
-/** শুরু থেকে asOfMonth পর্যন্ত মোট ধার্য ভাড়া */
+/** শুরু থেকে asOfMonth পর্যন্ত মোট ধার্য ভাড়া — কেবল ভাড়ায় থাকা মাসগুলোর */
 export function shopChargeUpTo(shop, settings, asOfMonth) {
   const from = U.monthIndex(shopStartMonth(shop, settings));
   const to = U.monthIndex(shopEndMonth(shop, asOfMonth));
   let total = 0;
-  for (let i = from; i <= to; i += 1) total += shopRentForMonth(shop, U.indexToMonth(i));
+  for (let i = from; i <= to; i += 1) {
+    const m = U.indexToMonth(i);
+    if (shopIsChargeable(shop, settings, m)) total += shopRentForMonth(shop, m);
+  }
   return total;
+}
+
+/** শুরু থেকে asOfMonth পর্যন্ত যে মাসগুলোতে দোকান ফাঁকা ছিল (ইতিহাসের ফাঁক) */
+export function shopVacantMonths(shop, settings, asOfMonth) {
+  if (!shopTenancies(shop).length) return [];
+  const from = U.monthIndex(shopStartMonth(shop, settings));
+  const to = U.monthIndex(asOfMonth);
+  const out = [];
+  for (let i = from; i <= to; i += 1) {
+    const m = U.indexToMonth(i);
+    if (!shopIsChargeable(shop, settings, m)) out.push(m);
+  }
+  return out;
 }
 
 /** একটি দোকানের সব আদায় */
@@ -591,25 +680,37 @@ export function shopStatus(data, shop, asOfMonth) {
  * (rentMonth ধরে), না দিলে পুরোটা। balance = received − adjusted − refunded।
  * agreed/monthlyAdjust চুক্তির তথ্য (দোকানের ঘরে লেখা), history কালানুক্রমে।
  */
-export function shopDeposit(data, shop, asOfMonth) {
+export function shopDeposit(data, shop, asOfMonth, tenancy) {
   const limit = asOfMonth ? U.monthIndex(asOfMonth) : Infinity;
-  const rows = shopRentsOf(data, shop.id).filter(
+  let rows = shopRentsOf(data, shop.id).filter(
     (r) => r.kind && r.kind.startsWith('advance') && U.monthIndex(r.rentMonth) <= limit
   );
+  // নির্দিষ্ট ভাড়াটিয়ার খাতা চাইলে — কেবল তাঁর সারিগুলো
+  if (tenancy) rows = rows.filter((r) => (shopTenancyForDeposit(shop, r.rentMonth, r) || {}).id === tenancy.id);
   const received = sumAmt(rows.filter((r) => r.kind === 'advance'));
   const adjusted = sumAmt(rows.filter((r) => r.kind === 'advance-adjust'));
   const refunded = sumAmt(rows.filter((r) => r.kind === 'advance-refund'));
+  // চুক্তির অঙ্ক — ভাড়াটিয়ার (দেওয়া থাকলে বা বর্তমানজনের), নইলে দোকানের
+  const t = tenancy || shopCurrentTenancy(shop, asOfMonth);
+  const agreed = t && Number(t.advanceAmount) > 0 ? Number(t.advanceAmount) : Number(shop.advanceAmount) || 0;
+  const monthlyAdjust = t && Number(t.advanceAdjust) > 0 ? Number(t.advanceAdjust) : Number(shop.advanceAdjust) || 0;
   return {
     received,
     adjusted,
     refunded,
     balance: received - adjusted - refunded,
-    agreed: Number(shop.advanceAmount) || 0,
-    monthlyAdjust: Number(shop.advanceAdjust) || 0,
+    agreed,
+    monthlyAdjust,
+    tenancy: t,
     history: rows
       .slice()
       .sort((a, b) => U.monthIndex(a.rentMonth) - U.monthIndex(b.rentMonth) || a.kind.localeCompare(b.kind))
   };
+}
+
+/** প্রতিটি ভাড়াটিয়ার অ্যাডভান্স খাতা আলাদা — আগেরজনের ফেরত বাকি আছে কিনা দেখতে */
+export function shopDepositByTenancy(data, shop, asOfMonth) {
+  return shopTenancies(shop).map((t) => ({ tenancy: t, ...shopDeposit(data, shop, asOfMonth, t) }));
 }
 
 /** সব দোকানের অ্যাডভান্স মিলিয়ে — সমিতির কাছে ভাড়াটিয়াদের মোট জমা (দায়) */
@@ -637,7 +738,9 @@ export function shopLedger(data, shop, asOfMonth) {
   let running = 0;
   for (let i = from; i <= to; i += 1) {
     const month = U.indexToMonth(i);
-    const charge = shopIsChargeable(shop, data.settings, month) ? shopRentForMonth(shop, month) : 0;
+    const chargeable = shopIsChargeable(shop, data.settings, month);
+    const charge = chargeable ? shopRentForMonth(shop, month) : 0;
+    const tenancy = shopTenancyFor(shop, month);
     const inMonth = rents.filter((r) => r.rentMonth === month);
     const rent = sumAmt(inMonth.filter((r) => r.kind === 'rent'));
     const other = sumAmt(inMonth.filter((r) => r.kind === 'other'));
@@ -650,6 +753,10 @@ export function shopLedger(data, shop, asOfMonth) {
       month,
       label: U.monthLabel(month),
       charge,
+      chargeable,
+      // ইতিহাস আছে অথচ এ মাসে কেউ ছিল না = দোকান ফাঁকা
+      vacant: !chargeable && shopTenancies(shop).length > 0,
+      tenancy,
       rent,
       other,
       adjust,

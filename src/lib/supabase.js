@@ -164,6 +164,9 @@ export const shopFromRow = (r) => ({
   advanceAmount: Number(r.advance_amount) || 0,
   advanceAdjust: Number(r.advance_adjust) || 0,
   advanceNote: r.advance_note || '',
+  // ভাড়াটিয়ার ইতিহাস: [{ id, tenantName, phone, fromMonth, toMonth, rent,
+  // advanceAmount, advanceAdjust, note }] — মাঝের ফাঁক = দোকান ফাঁকা
+  tenancies: Array.isArray(r.tenancies) ? r.tenancies : [],
   active: r.active !== false,
   joinMonth: r.join_month || '',
   closedFrom: r.closed_from || '',
@@ -182,6 +185,7 @@ export const shopToRow = (s) => ({
   advance_amount: Number(s.advanceAmount) || 0,
   advance_adjust: Number(s.advanceAdjust) || 0,
   advance_note: s.advanceNote || '',
+  tenancies: Array.isArray(s.tenancies) && s.tenancies.length ? s.tenancies : null,
   active: s.active !== false,
   join_month: s.joinMonth || null,
   closed_from: s.closedFrom || null,
@@ -193,6 +197,7 @@ export const shopRentFromRow = (r) => ({
   shopId: r.shop_id,
   rentMonth: r.rent_month,
   paidMonth: r.paid_month || r.rent_month,
+  tenancyId: r.tenancy_id || '',       // কোন ভাড়াটিয়ার (ঐচ্ছিক; অ্যাডভান্সে দরকারি)
   // 'rent' | 'electricity' | 'other' | 'advance' | 'advance-adjust' | 'advance-refund'
   kind: r.kind || 'rent',
   amount: Number(r.amount) || 0,
@@ -206,6 +211,7 @@ export const shopRentToRow = (p) => ({
   shop_id: p.shopId,
   rent_month: p.rentMonth,
   paid_month: p.paidMonth || p.rentMonth,
+  tenancy_id: p.tenancyId || null,
   kind: p.kind || 'rent',
   amount: Number(p.amount) || 0,
   collector_id: p.collectorId || '',

@@ -294,7 +294,7 @@ export function DashboardView({ setCurrentTab }) {
                     shopMonth.rows.map((r) => (
                       <tr key={r.shop.id}>
                         <td><b>{Calc.shopLabel(r.shop)}</b></td>
-                        <td>{r.shop.tenantName || '—'}</td>
+                        <td>{Calc.shopTenantName(r.shop, r.rentMonths[0] || selectedMonth) || '—'}</td>
                         <td style={{ fontSize: '12px' }}>{r.rentMonths.map(U.monthLabelShort).join(', ') || '—'}</td>
                         <td className="amount">
                           {r.rent ? U.bnTaka(r.rent) : '—'}
