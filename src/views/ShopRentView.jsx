@@ -52,9 +52,54 @@ const emptyTenancy = () => ({
 });
 
 /* --------------------------------------------------------------------------
+   জামানত গ্রহণ — এক লাইনে: চুক্তির অঙ্ক লেখা আছে অথচ গ্রহণের সারি নেই,
+   তখন দোকানের ফর্মেই লিখে সেভ করা যায় (নইলে রিপোর্টে কিছুই দেখায় না)
+   -------------------------------------------------------------------------- */
+function DepositReceiptQuick({ amount, defaultMonth, monthOptions, collectors, who, onSubmit }) {
+  const [amt, setAmt] = useState(String(amount || ''));
+  const [month, setMonth] = useState(defaultMonth || U.currentMonth());
+  const [collectorId, setCollectorId] = useState(collectors.length === 1 ? collectors[0].id : '');
+  const [err, setErr] = useState('');
+  const months = monthOptions.includes(month) ? monthOptions : [month, ...monthOptions].sort();
+  const submit = () => {
+    const n = Number(amt) || 0;
+    if (n <= 0) { setErr('টাকার অঙ্ক লিখুন।'); return; }
+    if (!month) { setErr('কোন মাসের হিসাবে, বাছুন।'); return; }
+    if (!collectorId) { setErr('কে গ্রহণ করলেন, বাছুন।'); return; }
+    setErr('');
+    onSubmit({ amount: n, month, collectorId });
+  };
+  return (
+    <div style={{ gridColumn: '1 / -1', padding: '8px 10px', border: '1px dashed #f59e0b', borderRadius: '8px', background: '#fffbeb', marginBottom: '10px' }}>
+      <div style={{ fontSize: '12px', color: '#b45309', fontWeight: 600 }}>
+        {who ? `${who} — ` : ''}চুক্তির অঙ্ক লেখা আছে, কিন্তু জামানত <u>গ্রহণের</u> এন্ট্রি নেই — খতিয়ান ও রিপোর্টে দেখাবে না। এখানেই লিখুন:
+      </div>
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', marginTop: '6px' }}>
+        <input className="form-input" type="number" min="0" value={amt} style={{ width: '120px', textAlign: 'right' }}
+          onChange={(e) => setAmt(e.target.value)} />
+        <select className="form-input" value={month} style={{ width: '190px' }} onChange={(e) => setMonth(e.target.value)}>
+          {months.map((m) => <option key={m} value={m}>{U.monthLabel(m)} এর হিসাবে</option>)}
+        </select>
+        <select className="form-input" value={collectorId} style={{ width: '190px' }} onChange={(e) => setCollectorId(e.target.value)}>
+          <option value="">— কে গ্রহণ করলেন —</option>
+          {collectors.map((c) => <option key={c.id} value={c.id}>{c.bn || c.en}</option>)}
+        </select>
+        <button type="button" className="btn btn-primary btn-sm" onClick={submit}>
+          <Check size={14} /> গ্রহণ লিখুন
+        </button>
+      </div>
+      <div className="form-hint" style={{ marginTop: '4px' }}>
+        এটি সাথে সাথে সেভ হয় (ফর্মের "সেভ করুন" লাগে না)। আগস্ট-২৫ বা পরের মাস বাছলে ঐ মাসের খতিয়ানে আয় হিসেবে বসবে; তার আগের মাসে কাগজের খতিয়ান, সেখানে বসবে না।
+      </div>
+      {err && <div className="form-error" style={{ marginTop: '4px' }}>{err}</div>}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
    দোকানের তথ্যের ফর্ম (নতুন / সম্পাদনা)
    -------------------------------------------------------------------------- */
-function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTenancy = [] }) {
+function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTenancy = [], deposit = null, collectors = [], onReceiveDeposit = null }) {
   const set = (patch) => setDraft({ ...draft, ...patch });
   const history = draft.rentHistory || [];
   const setHist = (i, patch) =>
@@ -129,8 +174,18 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTe
           <label className="form-label">অ্যাডভান্স (জামানত) — চুক্তির অঙ্ক</label>
           <input className="form-input" type="number" min="0" value={draft.advanceAmount}
             onChange={(e) => set({ advanceAmount: e.target.value })} />
-          <div className="form-hint">শুধু তথ্য; আসল গ্রহণ "দোকান ভাড়া এন্ট্রি ফর্ম" → অ্যাডভান্স থেকে লিখুন।</div>
+          <div className="form-hint">শুধু তথ্য; আসল গ্রহণ "দোকান ভাড়া এন্ট্রি ফর্ম" → অ্যাডভান্স থেকে লিখুন, বা নিচের ঘরে।</div>
         </div>
+        {draft.id && onReceiveDeposit && deposit && deposit.received === 0 && Number(draft.advanceAmount) > 0 && (
+          <DepositReceiptQuick
+            key={`dep-${draft.id}`}
+            amount={Number(draft.advanceAmount)}
+            defaultMonth={draft.joinMonth || ''}
+            monthOptions={monthOptions}
+            collectors={collectors}
+            onSubmit={(e) => onReceiveDeposit({ ...e, tenancyId: '' })}
+          />
+        )}
         <div className="form-group" style={field}>
           <label className="form-label">অ্যাডভান্স থেকে মাসে কত কাটা হবে</label>
           <input className="form-input" type="number" min="0" value={draft.advanceAdjust}
@@ -198,6 +253,21 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTe
                 <Trash2 size={15} />
               </button>
             </div>
+            {(() => {
+              const d = depositByTenancy.find((x) => x.tenancy && x.tenancy.id === t.id);
+              if (!draft.id || !onReceiveDeposit || !d || d.received > 0 || t.toMonth || !(Number(t.advanceAmount) > 0)) return null;
+              return (
+                <DepositReceiptQuick
+                  key={`dep-${t.id}`}
+                  amount={Number(t.advanceAmount)}
+                  defaultMonth={t.fromMonth || ''}
+                  monthOptions={monthOptions}
+                  collectors={collectors}
+                  who={t.tenantName || 'এই ভাড়াটিয়া'}
+                  onSubmit={(e) => onReceiveDeposit({ ...e, tenancyId: t.id })}
+                />
+              );
+            })()}
             {/* "পর্যন্ত" বসানো হলো অথচ জামানত বাকি — ফেরত লেখার কথা মনে করিয়ে দেওয়া */}
             {(() => {
               const d = depositByTenancy.find((x) => x.tenancy && x.tenancy.id === t.id);
@@ -780,6 +850,14 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
     addToast(`${Calc.shopLabel(saved)} — ভাড়াটিয়ার তথ্য হালনাগাদ হয়েছে।`, 'success');
     setTenantChange(false);
   };
+  // দোকানের ফর্ম থেকে জামানত গ্রহণ — সাথে সাথে সেভ (ফর্ম সেভের উপর নির্ভর নয়)
+  const receiveDeposit = ({ amount, month, collectorId, tenancyId }) => {
+    if (!shop) return;
+    saveShopRents([{
+      shopId: shop.id, rentMonth: month, paidMonth: month, kind: 'advance', amount,
+      collectorId, tenancyId: tenancyId || '', note: 'জামানত গ্রহণ'
+    }]);
+  };
   const removeShop = () => {
     if (!shop) return;
     const n = Calc.shopRentsOf(data, shop.id).length;
@@ -864,6 +942,9 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
           onCancel={() => setShopDraft(null)}
           monthOptions={paidMonthOptions}
           depositByTenancy={shopDraft.id && shop && shop.id === shopDraft.id ? Calc.shopDepositByTenancy(data, shop) : []}
+          deposit={shopDraft.id && shop && shop.id === shopDraft.id ? Calc.shopDeposit(data, shop) : null}
+          collectors={collectors}
+          onReceiveDeposit={shopDraft.id && shop && shop.id === shopDraft.id ? receiveDeposit : null}
         />
       )}
 
