@@ -127,7 +127,13 @@ export function ReportView({
   const [selectedTenancyId, setSelectedTenancyId] = useState(
     (deep && deep.rt === 'shop-ledger' && deep.rtn) || ''
   );
-  useEffect(() => { setSelectedTenancyId(''); }, [selectedShopId]);
+  // দোকান বদলালে ভাড়াটিয়ার বাছাই মুছে যায় — তবে প্রথম লোডে নয়, নইলে QR লিংকের
+  // (rtn) ভাড়াটিয়া হারিয়ে যেত
+  const prevShopIdRef = useRef(selectedShopId);
+  useEffect(() => {
+    if (prevShopIdRef.current !== selectedShopId) setSelectedTenancyId('');
+    prevShopIdRef.current = selectedShopId;
+  }, [selectedShopId]);
   // বকেয়া বিবরণীর QR-এ বাছাই করা ফ্ল্যাটের তালিকাও থাকে (rf=fA-1,fB-2…)
   const [deepSelectiveIds] = useState(() =>
     deep && deep.rt === 'selective' && deep.rf ? deep.rf.split(',') : null
@@ -830,8 +836,8 @@ export function ReportView({
         {/* Centered Watermark ও 3-Column Header — মাসভিত্তিক বকেয়া লিস্ট
             ছাড়া সব রিপোর্টে শিটের উপরে একবার; ওই লিস্টে প্রতি পাতায় আলাদা */}
         {/* দোকান ভাড়া বিবরণী দুই পাতার — জলছাপ ও শিরোনাম পাতার ভেতরে বসে */}
-        {reportType !== 'dues-list' && reportType !== 'shop-rent' && <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />}
-        {reportType !== 'dues-list' && reportType !== 'shop-rent' && headBlock}
+        {reportType !== 'dues-list' && reportType !== 'shop-rent' && reportType !== 'shop-ledger' && <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />}
+        {reportType !== 'dues-list' && reportType !== 'shop-rent' && reportType !== 'shop-ledger' && headBlock}
 
         {/* REPORT 1: Monthly Summary */}
         {reportType === 'monthly' && (
@@ -1856,6 +1862,10 @@ export function ReportView({
         {/* REPORT: দোকানভিত্তিক খতিয়ান — একটি দোকানের মাসওয়ারি ধার্য, জমা, অ্যাডভান্স, বকেয়া */}
         {reportType === 'shop-ledger' && shopLedgerShop && shopLedgerStatus && (
           <>
+            {/* ---- ১ম পাতা: শিরোনাম, ভাড়াটিয়ার ইতিহাস, মাসওয়ারি খতিয়ান, মোট ---- */}
+            <div className="shop-page is-first">
+            <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />
+            {headBlock}
             <div style={{ marginBottom: '8px', fontSize: '11px', color: '#1e293b' }}>
               দোকান: <b className="flat-no">{Calc.shopLabel(shopLedgerShop)}</b> &nbsp;|&nbsp;
               ভাড়াটিয়া: <b className="owner-name">
@@ -2012,8 +2022,38 @@ export function ReportView({
                   <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>অগ্রীম জমা {U.bnNumber(shopLedgerStatus.advance)}/-</div>
                 )}
               </div>
-              {shopLedgerDeposit && (shopLedgerDeposit.received > 0 || shopLedgerDeposit.agreed > 0) && (
-                <div className="box">
+            </div>
+
+            <div className="print-note print-note-sm" style={{ marginTop: '8px' }}>
+              <span className="print-note-tag">বি.দ্র.</span>
+              <span>
+                ছকটি ভাড়ার মাস অনুযায়ী; "জমার মাস" কলামে কোন মাসের খতিয়ানে টাকাটা উঠেছে। বকেয়া = ধার্য − নগদ জমা −
+                অ্যাডভান্স থেকে সমন্বয়; বিদ্যুৎ বিল আলাদা, "অ্যাড." লেখা অংশ অ্যাডভান্স (জামানত) থেকে কাটা (নগদ নয়)।
+                {shopLedgerTenancy
+                  ? ' এই বিবরণী কেবল উল্লিখিত ভাড়াটিয়ার সময়কালের।'
+                  : ' "ফাঁকা" মাসে দোকানে ভাড়াটিয়া ছিল না, ভাড়া ধার্য হয়নি।'}
+                {' '}অ্যাডভান্স (জামানত) খাতা ও স্বাক্ষর পরের পাতায়।
+              </span>
+            </div>
+
+            <div className="print-foot">
+              {Calc.shopLabel(shopLedgerShop)}{shopLedgerTenancy ? ` — ${shopLedgerTenancy.tenantName || 'নামহীন'}` : ''} &nbsp;|&nbsp;{' '}
+              {U.monthLabelShort(shopLedgerFrom)} হতে {shopLedgerToShort}{' '}
+              ({U.bnDigits(shopLedgerRows.length)} মাস) &nbsp;|&nbsp; পাতা ১/২ &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
+            </div>
+            </div>{/* /১ম পাতা */}
+
+            {/* ---- ২য় পাতা: অ্যাডভান্স (জামানত) খাতা, চূড়ান্ত হিসাব, স্বাক্ষর, QR ---- */}
+            <div className="shop-page">
+            <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />
+            <div className="shop-page-title">
+              অ্যাডভান্স (জামানত) খাতা — {Calc.shopLabel(shopLedgerShop)}
+              {shopLedgerTenancy ? `, ${shopLedgerTenancy.tenantName || 'নামহীন'}` : ''} ({shopLedgerToShort} পর্যন্ত)
+            </div>
+
+            {shopLedgerDeposit && (shopLedgerDeposit.received > 0 || shopLedgerDeposit.agreed > 0) ? (
+              <div className="print-totals" style={{ marginTop: '4px' }}>
+                <div className="box" style={{ flex: '1 1 100%' }}>
                   অ্যাডভান্স (জামানত) জমা আছে:{' '}
                   <b className="amt-advance">{U.bnNumber(shopLedgerDeposit.balance)}/-</b>
                   <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
@@ -2023,8 +2063,12 @@ export function ReportView({
                     {shopLedgerDeposit.agreed > 0 ? ` • চুক্তি ${U.bnNumber(shopLedgerDeposit.agreed)}` : ''}
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: '10.5px', color: '#475569', margin: '4px 0 8px' }}>
+                এই দোকানের{shopLedgerTenancy ? ' এই ভাড়াটিয়ার' : ''} অ্যাডভান্স (জামানত) গ্রহণের কোনো এন্ট্রি নেই।
+              </div>
+            )}
 
             {/* ছেড়ে যাওয়া ভাড়াটিয়ার চূড়ান্ত হিসাব — জামানতে যা বাকি, বকেয়া বাদ দিয়ে নিট পাওনা */}
             {shopLedgerTenancy && shopLedgerTenancy.toMonth && shopLedgerDeposit && (
@@ -2039,8 +2083,10 @@ export function ReportView({
                     {U.bnNumber(Math.abs(shopLedgerStmt.netRefund + shopLedgerDeposit.refunded))}/-
                   </b>
                   {shopLedgerDeposit.refunded > 0 && (
-                    <>; ফেরত দেওয়া হয়েছে {U.bnNumber(shopLedgerDeposit.refunded)}/-, বাকি{' '}
-                      <b className={shopLedgerStmt.netRefund > 0 ? 'amt-due' : undefined}>{U.bnNumber(Math.max(0, shopLedgerStmt.netRefund))}/-</b></>
+                    <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
+                      ফেরত দেওয়া হয়েছে {U.bnNumber(shopLedgerDeposit.refunded)}/-, বাকি{' '}
+                      <span className={shopLedgerStmt.netRefund > 0 ? 'amt-due' : undefined} style={{ fontWeight: 700 }}>{U.bnNumber(Math.max(0, shopLedgerStmt.netRefund))}/-</span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -2048,8 +2094,7 @@ export function ReportView({
 
             {shopLedgerDeposit && shopLedgerDeposit.history.length > 0 && (
               <>
-                <div className="shop-page-title">অ্যাডভান্স (জামানত) খাতা</div>
-                <table className="print-table tbl-shop-deposit">
+                <table className="print-table tbl-shop-deposit" style={{ marginTop: '8px' }}>
                   <thead>
                     <tr>
                       <th style={{ textAlign: 'left', width: '16%' }}>মাস</th>
@@ -2092,11 +2137,11 @@ export function ReportView({
             <div className="print-note print-note-sm">
               <span className="print-note-tag">বি.দ্র.</span>
               <span>
-                ছকটি ভাড়ার মাস অনুযায়ী; "জমার মাস" কলামে কোন মাসের খতিয়ানে টাকাটা উঠেছে। বকেয়া = ধার্য − নগদ জমা −
-                অ্যাডভান্স থেকে সমন্বয়; বিদ্যুৎ বিল আলাদা, "অ্যাড." লেখা অংশ অ্যাডভান্স (জামানত) থেকে কাটা (নগদ নয়)।
+                অ্যাডভান্স (জামানত) ফেরতযোগ্য আমানত — আয় নয়। "সমন্বয়" মানে ভাড়াটিয়ার সম্মতিতে জামানত থেকে ভাড়া বা
+                বিদ্যুৎ বিল কেটে পরিশোধ ধরা হয়েছে (নগদ ওঠেনি); বন্ধনীতে কোন মাসের খতিয়ানে তা লেখা। জমা আছে = গ্রহণ − সমন্বয় − ফেরত।
                 {shopLedgerTenancy
-                  ? ' এই বিবরণী কেবল উল্লিখিত ভাড়াটিয়ার সময়কালের; অ্যাডভান্স খাতায় ছাড়ার পরের ফেরতও তাঁর খাতাতেই।'
-                  : ' "ফাঁকা" মাসে দোকানে ভাড়াটিয়া ছিল না, ভাড়া ধার্য হয়নি।'}
+                  ? ' ছাড়ার পরের ফেরতও এই ভাড়াটিয়ার খাতাতেই।'
+                  : ' একাধিক ভাড়াটিয়া থাকলে সবার এন্ট্রি একসাথে; ভাড়াটিয়াওয়ারি চূড়ান্ত হিসাবের জন্য উপরে ভাড়াটিয়া বাছুন।'}
               </span>
             </div>
 
@@ -2115,14 +2160,16 @@ export function ReportView({
             <div className="print-foot">
               {Calc.shopLabel(shopLedgerShop)}{shopLedgerTenancy ? ` — ${shopLedgerTenancy.tenantName || 'নামহীন'}` : ''} &nbsp;|&nbsp;{' '}
               {U.monthLabelShort(shopLedgerFrom)} হতে {shopLedgerToShort}{' '}
-              ({U.bnDigits(shopLedgerRows.length)} মাস) &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
+              ({U.bnDigits(shopLedgerRows.length)} মাস) &nbsp;|&nbsp; পাতা ২/২ &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
             </div>
+            {footerLinkBlock}
+            </div>{/* /২য় পাতা */}
           </>
         )}
 
         {/* সব রিপোর্টের নিচে: ছাপা কাগজ থেকে সরাসরি অনলাইন রিপোর্টে যাওয়ার পথ।
             মাসভিত্তিক বকেয়া লিস্টে প্রতি পাতায়, দোকান ভাড়া বিবরণীতে ২য় পাতার ভেতরে। */}
-        {reportType !== 'dues-list' && reportType !== 'shop-rent' && footerLinkBlock}
+        {reportType !== 'dues-list' && reportType !== 'shop-rent' && reportType !== 'shop-ledger' && footerLinkBlock}
       </div>
       </div>
     </div>
