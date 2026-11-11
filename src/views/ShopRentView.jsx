@@ -19,9 +19,13 @@ import * as U from '../utils/format';
 
 // মাসওয়ারি ঘরের খাত — শেষটি অ্যাডভান্স (জামানত) থেকে কাটা, নগদ নয় কিন্তু ভাড়া
 // পরিশোধ ধরা হয়। অ্যাডভান্স গ্রহণ/ফেরত এখানে নয় — "দোকান ভাড়া এন্ট্রি ফর্ম"-এ।
-const KINDS = ['rent', 'electricity', 'other', 'advance-adjust'];
+const KINDS = ['rent', 'electricity', 'other', 'advance-adjust', 'advance-adjust-elec'];
 // shopLedger সারিতে খাতগুলোর ঘরের নাম
-const ROW_KEY = { rent: 'rent', electricity: 'electricity', other: 'other', 'advance-adjust': 'adjust' };
+// shopLedger সারিতে কোন ঘর কোন খাত (electricity = নগদ + সমন্বয় মোট, তাই নগদটি আলাদা)
+const ROW_KEY = {
+  rent: 'rent', electricity: 'electricityCash', other: 'other',
+  'advance-adjust': 'adjust', 'advance-adjust-elec': 'electricityAdjust'
+};
 
 const emptyShop = (serial) => ({
   id: '',
@@ -50,7 +54,7 @@ const emptyTenancy = () => ({
 /* --------------------------------------------------------------------------
    দোকানের তথ্যের ফর্ম (নতুন / সম্পাদনা)
    -------------------------------------------------------------------------- */
-function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions }) {
+function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTenancy = [] }) {
   const set = (patch) => setDraft({ ...draft, ...patch });
   const history = draft.rentHistory || [];
   const setHist = (i, patch) =>
@@ -194,6 +198,17 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions }) {
                 <Trash2 size={15} />
               </button>
             </div>
+            {/* "পর্যন্ত" বসানো হলো অথচ জামানত বাকি — ফেরত লেখার কথা মনে করিয়ে দেওয়া */}
+            {(() => {
+              const d = depositByTenancy.find((x) => x.tenancy && x.tenancy.id === t.id);
+              if (!t.toMonth || !d || d.balance <= 0) return null;
+              return (
+                <div style={{ gridColumn: '1 / -1', fontSize: '11.5px', color: '#b91c1c' }}>
+                  {t.tenantName || 'এই ভাড়াটিয়া'} {U.monthLabelShort(t.toMonth)}-এ ছেড়ে গেলেও জামানতে <b>{U.bnTaka(d.balance)}</b> জমা আছে —
+                  ফেরত দিলে "দোকান ভাড়া এন্ট্রি ফর্ম → অ্যাডভান্স গ্রহণ / ফেরত"-এ লিখুন (নতুন ভাড়াটিয়ার জামানত থেকে দিলেও তা-ই)।
+                </div>
+              );
+            })()}
           </div>
         ))}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -345,6 +360,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
       electricity: pick('electricity') ? String(pick('electricity').amount) : '',
       other: pick('other') ? String(pick('other').amount) : '',
       'advance-adjust': pick('advance-adjust') ? String(pick('advance-adjust').amount) : '',
+      'advance-adjust-elec': pick('advance-adjust-elec') ? String(pick('advance-adjust-elec').amount) : '',
       paidMonth: items[0]?.paidMonth || (U.monthIndex(nextMonth) <= U.monthIndex(currentMonth) ? nextMonth : currentMonth),
       collectorId: items[0]?.collectorId || lastCollector,
       note: notes.join('; ')
@@ -371,6 +387,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
     const electricity = Number(d.electricity) || 0;
     const other = Number(d.other) || 0;
     const adjust = Number(d['advance-adjust']) || 0;
+    const elecAdjust = Number(d['advance-adjust-elec']) || 0;
     // নোটটি একটি রেকর্ডেই থাকে — অন্যান্য/সমন্বয় থাকলে সেটিতে (খতিয়ানের
     // লাইনে ঐ লেখাটাই বসে), নইলে ভাড়ায়, নইলে বিদ্যুৎ বিলে, নইলে অ্যাডভান্স সমন্বয়ে
     const noteOn = other > 0 ? 'other' : rent > 0 ? 'rent' : electricity > 0 ? 'electricity' : 'advance-adjust';
@@ -385,7 +402,8 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
       { ...common, kind: 'rent', amount: rent, note: noteOn === 'rent' ? d.note : '' },
       { ...common, kind: 'electricity', amount: electricity, note: noteOn === 'electricity' ? d.note : '' },
       { ...common, kind: 'other', amount: other, note: noteOn === 'other' ? d.note : '' },
-      { ...common, kind: 'advance-adjust', amount: adjust, note: noteOn === 'advance-adjust' ? d.note : '' }
+      { ...common, kind: 'advance-adjust', amount: adjust, note: noteOn === 'advance-adjust' ? d.note : '' },
+      { ...common, kind: 'advance-adjust-elec', amount: elecAdjust, note: '' }
     ];
   };
 
@@ -494,6 +512,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
           onSave={submitShop}
           onCancel={() => setShopDraft(null)}
           monthOptions={paidMonthOptions}
+          depositByTenancy={shopDraft.id && shop && shop.id === shopDraft.id ? Calc.shopDepositByTenancy(data, shop) : []}
         />
       )}
 
@@ -655,7 +674,10 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
             <div className="metric-card success">
               <div className="metric-label">মোট ভাড়া জমা ({U.monthLabelShort(dueUpTo)} পর্যন্ত)</div>
               <div className="metric-value" style={{ color: 'var(--success)' }}>{U.bnTaka(status.paid)}</div>
-              <div className="metric-sub">ধার্য {U.bnTaka(status.charged)} • বিদ্যুৎ বিল {U.bnTaka(status.electricity)} (আলাদা)</div>
+              <div className="metric-sub">
+                ধার্য {U.bnTaka(status.charged)} • বিদ্যুৎ বিল {U.bnTaka(status.electricity)} (আলাদা
+                {status.electricityAdjust > 0 ? `, এর ${U.bnTaka(status.electricityAdjust)} অ্যাডভান্স থেকে` : ''})
+              </div>
             </div>
             <div className={`metric-card ${status.due > 0 ? 'danger' : 'warning'}`}>
               <div className="metric-label">{status.due > 0 ? 'বকেয়া ভাড়া' : 'অগ্রীম'} ({U.monthLabelShort(dueUpTo)} পর্যন্ত)</div>
@@ -679,6 +701,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
                   <div className="metric-value" style={{ color: 'var(--warning-dark)' }}>{U.bnTaka(dep.balance)}</div>
                   <div className="metric-sub">
                     গ্রহণ {U.bnTaka(dep.received)} • সমন্বয় {U.bnTaka(dep.adjusted)}
+                    {dep.adjustedElec > 0 && ` (ভাড়া ${U.bnTaka(dep.adjustedRent)}, বিদ্যুৎ ${U.bnTaka(dep.adjustedElec)})`}
                     {dep.refunded > 0 && ` • ফেরত ${U.bnTaka(dep.refunded)}`}
                     {dep.agreed > 0 && ` • চুক্তি ${U.bnTaka(dep.agreed)}`}
                     {dep.monthlyAdjust > 0 && `, মাসে ${U.bnTaka(dep.monthlyAdjust)} কাটা`}
@@ -714,7 +737,8 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
                       <th className="amount">ভাড়া জমা</th>
                       <th className="amount">বিদ্যুৎ বিল</th>
                       <th className="amount">অন্যান্য</th>
-                      <th className="amount" title="ভাড়াটিয়ার অ্যাডভান্স (জামানত) থেকে কেটে — নগদ নয়">অ্যাডভান্স সমন্বয়</th>
+                      <th className="amount" title="ভাড়াটিয়ার অ্যাডভান্স (জামানত) থেকে ভাড়া কেটে — নগদ নয়">অ্যাডভান্স সমন্বয়</th>
+                      <th className="amount" title="বিদ্যুৎ বিলও অ্যাডভান্স (জামানত) থেকে কাটা হলে — নগদ নয়">বিদ্যুৎ বিল অ্যাড. থেকে</th>
                       <th>জমার মাস (খতিয়ান)</th>
                       <th>আদায়কারী</th>
                       <th>নোট</th>
@@ -727,7 +751,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
                       const row = rowByMonth[m];
                       const d = draftFor(m);
                       const dirty = isDirty(m);
-                      const hasAny = row && (row.rent || row.electricity || row.other || row.adjust);
+                      const hasAny = row && (row.rent || row.electricity || row.other || row.adjust || row.electricityAdjust);
                       const isCurrent = m === currentMonth;
                       return (
                         <tr key={m} className={`${dirty ? 'dirty-row' : ''}${hasAny ? ' paid-row' : ''}`}>
@@ -829,8 +853,8 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
                       <td className="amount">{U.bnNumber(ledgerRows.reduce((s, r) => s + r.rent, 0))}</td>
                       <td className="amount">{U.bnNumber(ledgerRows.reduce((s, r) => s + r.electricity, 0))}</td>
                       <td className="amount">{U.bnNumber(ledgerRows.reduce((s, r) => s + r.other, 0))}</td>
-                      <td colSpan="3" style={{ fontSize: '11.5px', fontWeight: 400, color: '#64748b' }}>
-                        বকেয়া = ধার্য − (ভাড়া + অন্যান্য)। বিদ্যুৎ বিল বকেয়ার হিসাবে ঢোকে না।
+                      <td colSpan="5" style={{ fontSize: '11.5px', fontWeight: 400, color: '#64748b' }}>
+                        বকেয়া = ধার্য − (ভাড়া + অন্যান্য + অ্যাডভান্স সমন্বয়)। বিদ্যুৎ বিল (নগদ ও অ্যাডভান্স থেকে, দুটোই) বকেয়ার হিসাবে ঢোকে না।
                       </td>
                       <td className="amount">
                         {(() => {

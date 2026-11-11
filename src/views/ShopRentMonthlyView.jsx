@@ -91,7 +91,7 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
             <div className="metric-label">অ্যাডভান্স (জামানত) জমা আছে</div>
             <div className="metric-value" style={{ color: 'var(--danger)' }}>{U.bnTaka(deposit.balance)}</div>
             <div className="metric-sub">
-              {U.bnDigits(deposit.shopCount)} দোকান • গ্রহণ {U.bnTaka(deposit.received)} − ভাড়ায় সমন্বয় {U.bnTaka(deposit.adjusted)}
+              {U.bnDigits(deposit.shopCount)} দোকান • গ্রহণ {U.bnTaka(deposit.received)} − সমন্বয় {U.bnTaka(deposit.adjusted)}
               {deposit.refunded > 0 && ` − ফেরত ${U.bnTaka(deposit.refunded)}`}
             </div>
           </div>
@@ -133,7 +133,7 @@ export function ShopRentMonthlyView({ onOpenPrint, onOpenEntry }) {
                           {r.electricity > 0 && <span>{r.rent > 0 ? ' • ' : ''}বিদ্যুৎ বিল {U.bnNumber(r.electricity)}</span>}
                           {r.other > 0 && <span>{r.rent > 0 || r.electricity > 0 ? ' • ' : ''}অন্যান্য {U.bnNumber(r.other)}</span>}
                           {r.adjust > 0 && (
-                            <span style={{ color: '#64748b' }}>{r.total > 0 ? ' • ' : ''}অ্যাডভান্স থেকে সমন্বয় {U.bnNumber(r.adjust)} (নগদ নয়)</span>
+                            <span style={{ color: '#64748b' }}>{r.total > 0 ? ' • ' : ''}অ্যাডভান্স থেকে সমন্বয় {U.bnNumber(r.adjust)}{r.adjustElec > 0 ? ` (ভাড়া ${U.bnNumber(r.adjustRent)}, বিদ্যুৎ ${U.bnNumber(r.adjustElec)})` : ''} (নগদ নয়)</span>
                           )}
                           {r.deposit > 0 && (
                             <span style={{ color: 'var(--warning-dark)' }}>{r.total > 0 || r.adjust > 0 ? ' • ' : ''}অ্যাডভান্স গ্রহণ {U.bnNumber(r.deposit)}</span>

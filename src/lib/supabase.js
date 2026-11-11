@@ -198,7 +198,7 @@ export const shopRentFromRow = (r) => ({
   rentMonth: r.rent_month,
   paidMonth: r.paid_month || r.rent_month,
   tenancyId: r.tenancy_id || '',       // কোন ভাড়াটিয়ার (ঐচ্ছিক; অ্যাডভান্সে দরকারি)
-  // 'rent' | 'electricity' | 'other' | 'advance' | 'advance-adjust' | 'advance-refund'
+  // 'rent' | 'electricity' | 'other' | 'advance' | 'advance-adjust' | 'advance-adjust-elec' | 'advance-refund'
   kind: r.kind || 'rent',
   amount: Number(r.amount) || 0,
   collectorId: r.collector_id || '',

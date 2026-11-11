@@ -4,7 +4,7 @@ import * as Calc from '../utils/calc';
 import * as U from '../utils/format';
 import {
   Printer, FileText, ChevronLeft, ChevronDown, Layers, Building2, Store,
-  ClipboardList, CheckSquare, Square
+  ClipboardList, CheckSquare, Square, Users
 } from 'lucide-react';
 import { Watermark } from '../components/Watermark';
 import { ResidentBadge } from '../components/ResidentBadge';
@@ -27,7 +27,8 @@ function readDeepLink() {
     rt: REPORT_TYPES.includes(p.get('rt')) ? p.get('rt') : null,
     rm: /^[0-9]{4}-[0-9]{2}$/.test(p.get('rm') || '') ? p.get('rm') : null,
     rf: p.get('rf') || null,
-    rs: p.get('rs') || null   // দোকানভিত্তিক খতিয়ানে কোন দোকান
+    rs: p.get('rs') || null,  // দোকানভিত্তিক খতিয়ানে কোন দোকান
+    rtn: p.get('rtn') || null // ঐ দোকানের কোন ভাড়াটিয়ার সময়কাল (খালি = পুরো দোকান)
   };
 }
 
@@ -122,6 +123,11 @@ export function ReportView({
     (deep && deep.rt === 'shop-ledger' && deep.rs) || defaultShopId || ''
   );
   useEffect(() => { if (defaultShopId) setSelectedShopId(defaultShopId); }, [defaultShopId]);
+  // দোকানভিত্তিক খতিয়ানে কোন ভাড়াটিয়ার সময়কাল — '' = পুরো দোকান (সব ভাড়াটিয়া)
+  const [selectedTenancyId, setSelectedTenancyId] = useState(
+    (deep && deep.rt === 'shop-ledger' && deep.rtn) || ''
+  );
+  useEffect(() => { setSelectedTenancyId(''); }, [selectedShopId]);
   // বকেয়া বিবরণীর QR-এ বাছাই করা ফ্ল্যাটের তালিকাও থাকে (rf=fA-1,fB-2…)
   const [deepSelectiveIds] = useState(() =>
     deep && deep.rt === 'selective' && deep.rf ? deep.rf.split(',') : null
@@ -379,7 +385,9 @@ export function ReportView({
   // মাস অনেক, তাই মাসগুলো সারিতে আর দোকানগুলো কলামে — A4-এ ধরে।
   const shopMatrixFrom = s.startMonth || '2024-08';
   const shopMatrix = Calc.shopRentMatrix(data, shopMatrixFrom, selectedMonth);
-  const shopGridElec = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.electricity, 0);
+  // বিদ্যুৎ বিল: নগদ + অ্যাডভান্স থেকে কাটা (ছকে "অ্যাড." চিহ্নসহ)
+  const shopGridElecAdjust = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.electricityAdjust, 0);
+  const shopGridElec = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.electricity, 0) + shopGridElecAdjust;
   // অ্যাডভান্স থেকে কাটা — ভাড়া পরিশোধ ধরা হয় (ছকে ঘরের ভেতরে), নগদ নয়
   const shopGridAdjust = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.adjust, 0);
   const shopGridTotal = shopMatrix.rows.reduce((s2, r) => s2 + r.totals.rent + r.totals.other + r.totals.adjust, 0) + shopGridElec;
@@ -421,10 +429,19 @@ export function ReportView({
   // ---- দোকানভিত্তিক খতিয়ান (একটি দোকান, মাসওয়ারি) ----
   const shopsAll = Calc.shopsSorted(data, true);
   const shopLedgerShop = shopsAll.find((x) => x.id === selectedShopId) || shopsAll[0] || null;
-  const shopLedgerRows = shopLedgerShop ? Calc.shopLedger(data, shopLedgerShop, selectedMonth) : [];
-  const shopLedgerStatus = shopLedgerShop ? Calc.shopStatus(data, shopLedgerShop, selectedMonth) : null;
-  const shopLedgerDeposit = shopLedgerShop ? Calc.shopDeposit(data, shopLedgerShop, selectedMonth) : null;
   const shopLedgerTenancies = shopLedgerShop ? Calc.shopTenancies(shopLedgerShop) : [];
+  const shopLedgerTenancy = shopLedgerTenancies.find((t) => t.id === selectedTenancyId) || null;
+  // একজন ভাড়াটিয়া বাছাই করলে কেবল তাঁর সময়কালের হিসাব (ছাড়ার সময়ের চূড়ান্ত হিসাব),
+  // নইলে পুরো দোকান শুরু থেকে নির্বাচিত মাস পর্যন্ত
+  const shopLedgerStmt = shopLedgerShop
+    ? Calc.shopTenancyStatement(data, shopLedgerShop, shopLedgerTenancy, selectedMonth)
+    : null;
+  const shopLedgerRows = shopLedgerStmt ? shopLedgerStmt.rows : [];
+  const shopLedgerStatus = shopLedgerStmt ? shopLedgerStmt.status : null;
+  const shopLedgerDeposit = shopLedgerStmt ? shopLedgerStmt.deposit : null;
+  const shopLedgerFrom = shopLedgerStmt ? shopLedgerStmt.fromMonth : selectedMonth;
+  const shopLedgerTo = shopLedgerStmt ? shopLedgerStmt.toMonth : selectedMonth;
+  const shopLedgerToShort = U.monthLabelShort(shopLedgerTo);
   // পুরোনো কাগজের একত্রিত "দোকান ভাড়া ও বিবিধ আয়" (সেটিংসে shopRentLegacy)
   const shopLegacy = Calc.shopRentLegacy(data);
   const shopLegacyTotal = shopLegacy.reduce((s2, l) => s2 + l.amount, 0);
@@ -445,7 +462,10 @@ export function ReportView({
       if (ledgerFlat) q.set('rf', ledgerFlat.id);
     } else {
       q.set('rm', selectedMonth);
-      if (reportType === 'shop-ledger' && shopLedgerShop) q.set('rs', shopLedgerShop.id);
+      if (reportType === 'shop-ledger' && shopLedgerShop) {
+        q.set('rs', shopLedgerShop.id);
+        if (shopLedgerTenancy) q.set('rtn', shopLedgerTenancy.id);
+      }
       if (reportType === 'selective' && effSelectiveIds && targetFlats.length < data.flats.length) {
         q.set('rf', targetFlats.map((f) => f.id).join(','));
       }
@@ -490,7 +510,9 @@ export function ReportView({
           {reportType === 'cashbook' && `সার্ভিস হিসাবায়ন সারসংক্ষেপ (${monthShort})`}
           {reportType === 'ledger' && `ফ্ল্যাটভিত্তিক সার্ভিস চার্জ লেজার ও বকেয়া বিবরণী (${ledgerMonthLabel} পর্যন্ত)`}
           {reportType === 'shop-rent' && `দোকান ভাড়া আদায় ও বকেয়া বিবরণী (${monthShort})`}
-          {reportType === 'shop-ledger' && `দোকানভিত্তিক ভাড়ার লেজার ও বকেয়া বিবরণী (${monthShort} পর্যন্ত)`}
+          {reportType === 'shop-ledger' && (shopLedgerTenancy
+            ? `ভাড়াটিয়ার চূড়ান্ত হিসাব — ভাড়া, বিদ্যুৎ ও অ্যাডভান্স (${U.monthLabelShort(shopLedgerFrom)} হতে ${shopLedgerToShort})`
+            : `দোকানভিত্তিক ভাড়ার লেজার ও বকেয়া বিবরণী (${monthShort} পর্যন্ত)`)}
         </div>
       </div>
       <div className="head-date">
@@ -503,6 +525,7 @@ export function ReportView({
         {reportType === 'shop-ledger' && shopLedgerShop && (
           <div style={{ fontSize: '10.5px', marginTop: '2px' }}>
             <b className="flat-no">{Calc.shopLabel(shopLedgerShop)}</b>
+            {shopLedgerTenancy && <> — <b className="owner-name">{shopLedgerTenancy.tenantName || 'নামহীন'}</b></>}
           </div>
         )}
       </div>
@@ -623,6 +646,30 @@ export function ReportView({
               <span className="picker-count" title="মোট দোকান">
                 {U.bnDigits(shopsAll.length)}টি
               </span>
+            </div>
+          )}
+          {/* ভাড়াটিয়ার ইতিহাস থাকলে — পুরো দোকান, নাকি একজনের সময়কাল (ছাড়ার চূড়ান্ত হিসাব) */}
+          {reportType === 'shop-ledger' && shopLedgerTenancies.length > 0 && (
+            <div className="ledger-flat-picker">
+              <span className="picker-icon" aria-hidden="true">
+                <Users size={15} />
+              </span>
+              <label htmlFor="ledger-shop-tenancy">ভাড়াটিয়া</label>
+              <div className="picker-select">
+                <select
+                  id="ledger-shop-tenancy"
+                  value={selectedTenancyId}
+                  onChange={(e) => setSelectedTenancyId(e.target.value)}
+                >
+                  <option value="">পুরো দোকান — সব ভাড়াটিয়া</option>
+                  {shopLedgerTenancies.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.tenantName || 'নামহীন'} ({U.monthLabelShort(t.fromMonth)} হতে {t.toMonth ? U.monthLabelShort(t.toMonth) : 'চলছে'})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={15} className="picker-chevron" aria-hidden="true" />
+              </div>
             </div>
           )}
 
@@ -1486,7 +1533,7 @@ export function ReportView({
                 ))}
                 {shopMatrix.months.map((m, mi) => {
                   const ct = shopMatrix.colTotals[mi];
-                  const rowTotal = ct.rent + ct.other + ct.adjust + ct.electricity;
+                  const rowTotal = ct.rent + ct.other + ct.adjust + ct.electricity + ct.electricityAdjust;
                   return (
                     <tr key={m}>
                       <td style={{ textAlign: 'left' }}><b>{U.monthLabel(m)}</b></td>
@@ -1509,7 +1556,12 @@ export function ReportView({
                               )}
                             </td>
                             <td className={!c.chargeable ? 'na' : undefined} style={{ textAlign: 'center' }} title={tip}>
-                              {c.electricity > 0 ? U.bnNumber(c.electricity) : ''}
+                              {c.electricity + c.electricityAdjust > 0 ? U.bnNumber(c.electricity + c.electricityAdjust) : ''}
+                              {c.electricityAdjust > 0 && (
+                                <div style={{ fontSize: '8px', fontWeight: 400, color: '#475569', lineHeight: 1.1 }}>
+                                  অ্যাড. {U.bnNumber(c.electricityAdjust)}
+                                </div>
+                              )}
                             </td>
                           </React.Fragment>
                         );
@@ -1533,7 +1585,7 @@ export function ReportView({
                         {U.bnNumber(r.totals.rent + r.totals.other + r.totals.adjust)}
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        {r.totals.electricity ? U.bnNumber(r.totals.electricity) : ''}
+                        {r.totals.electricity + r.totals.electricityAdjust ? U.bnNumber(r.totals.electricity + r.totals.electricityAdjust) : ''}
                       </td>
                     </React.Fragment>
                   ))}
@@ -1563,7 +1615,10 @@ export function ReportView({
                 <b className="amt-paid">{U.bnNumber(shopGridTotal)}/-</b>
                 <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
                   এর মধ্যে বিদ্যুৎ বিল {U.bnNumber(shopGridElec)}/-
-                  {shopGridAdjust > 0 && <>, অ্যাডভান্স থেকে সমন্বয় {U.bnNumber(shopGridAdjust)}/- (নগদ নয়)</>}
+                  {shopGridAdjust + shopGridElecAdjust > 0 && (
+                    <>, অ্যাডভান্স থেকে সমন্বয় {U.bnNumber(shopGridAdjust + shopGridElecAdjust)}/-
+                      {shopGridElecAdjust > 0 && <> (ভাড়া {U.bnNumber(shopGridAdjust)}, বিদ্যুৎ {U.bnNumber(shopGridElecAdjust)})</>} (নগদ নয়)</>
+                  )}
                 </div>
               </div>
               <div className="box" style={{ border: '2px solid #000' }}>
@@ -1576,7 +1631,7 @@ export function ReportView({
                   দোকানের অ্যাডভান্স (জামানত), {monthShort} পর্যন্ত জমা আছে:{' '}
                   <b className="amt-advance">{U.bnNumber(shopDepositTot.balance)}/-</b>
                   <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
-                    গ্রহণ {U.bnNumber(shopDepositTot.received)} − ভাড়ায় সমন্বয় {U.bnNumber(shopDepositTot.adjusted)}
+                    গ্রহণ {U.bnNumber(shopDepositTot.received)} − সমন্বয় {U.bnNumber(shopDepositTot.adjusted)}
                     {shopDepositTot.refunded > 0 && <> − ফেরত {U.bnNumber(shopDepositTot.refunded)}</>}
                   </div>
                 </div>
@@ -1589,8 +1644,8 @@ export function ReportView({
                 ছকটি ভাড়ার মাস অনুযায়ী — ঘরে অঙ্ক থাকলে ঐ মাসের ভাড়া জমা পড়েছে, {DASH} থাকলে
                 বকেয়া, ফাঁকা ঘর মানে ঐ মাসে দোকানটি ভাড়ায় ছিল না। প্রতিটি দোকানের পাশের কলামে ঐ মাসের
                 বিদ্যুৎ বিল; মোট জমায় ভাড়া ও বিদ্যুৎ বিল দুটোই আছে, বকেয়ার হিসাবে শুধু ভাড়া।
-                {shopGridAdjust > 0 && (
-                  <> ঘরে "অ্যাড." লেখা অংশটুকু ভাড়াটিয়ার অ্যাডভান্স (জামানত) থেকে কেটে সমন্বয় — ভাড়া পরিশোধ ধরা হয়েছে, নগদ ওঠেনি।</>
+                {shopGridAdjust + shopGridElecAdjust > 0 && (
+                  <> ঘরে "অ্যাড." লেখা অংশটুকু ভাড়াটিয়ার অ্যাডভান্স (জামানত) থেকে কেটে সমন্বয় — ভাড়া/বিদ্যুৎ বিল পরিশোধ ধরা হয়েছে, নগদ ওঠেনি।</>
                 )}
                 {shopLegacy.length > 0 && (
                   <> উপরের ধূসর সারিগুলো পুরোনো কাগজের একত্রিত হিসাব — দোকানওয়ারি ভাঙা নেই, বকেয়ার হিসাবেও ধরা হয়নি।</>
@@ -1646,7 +1701,12 @@ export function ReportView({
                         ? <span className="due-amount">{U.bnNumber(status.due)}</span>
                         : status.advance > 0 ? `অগ্রীম ${U.bnNumber(status.advance)}` : 'নেই'}
                     </td>
-                    <td style={{ textAlign: 'right' }}>{status.electricity ? U.bnNumber(status.electricity) : DASH}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {status.electricity ? U.bnNumber(status.electricity) : DASH}
+                      {status.electricityAdjust > 0 && (
+                        <div style={{ fontSize: '8px', fontWeight: 400, color: '#475569', lineHeight: 1.1 }}>অ্যাড. {U.bnNumber(status.electricityAdjust)}</div>
+                      )}
+                    </td>
                     <td style={{ textAlign: 'left', fontSize: '9px' }}>
                       {vacant.length ? `${U.bnDigits(vacant.length)} মাস: ${vacant.map(U.monthLabelShort).join(', ')}` : '—'}
                     </td>
@@ -1676,7 +1736,7 @@ export function ReportView({
                   <th style={{ textAlign: 'left' }}>ভাড়াটিয়া</th>
                   <th style={{ width: '12%' }}>চুক্তির<br />অ্যাডভান্স</th>
                   <th className="th-paid" style={{ width: '12%' }}>গ্রহণ</th>
-                  <th style={{ width: '12%' }}>ভাড়ায়<br />সমন্বয়</th>
+                  <th style={{ width: '12%' }}>সমন্বয়<br />(ভাড়া / বিদ্যুৎ)</th>
                   <th style={{ width: '11%' }}>ফেরত</th>
                   <th className="th-due" style={{ width: '12%' }}>জমা আছে</th>
                   <th style={{ width: '14%' }}>মন্তব্য</th>
@@ -1693,7 +1753,14 @@ export function ReportView({
                     </td>
                     <td style={{ textAlign: 'right' }}>{d.agreed ? U.bnNumber(d.agreed) : DASH}</td>
                     <td className="col-paid" style={{ textAlign: 'right' }}>{d.received ? U.bnNumber(d.received) : DASH}</td>
-                    <td style={{ textAlign: 'right' }}>{d.adjusted ? U.bnNumber(d.adjusted) : DASH}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {d.adjusted ? U.bnNumber(d.adjusted) : DASH}
+                      {d.adjustedElec > 0 && (
+                        <div style={{ fontSize: '8px', fontWeight: 400, color: '#475569', lineHeight: 1.1 }}>
+                          ভাড়া {U.bnNumber(d.adjustedRent)} / বিদ্যুৎ {U.bnNumber(d.adjustedElec)}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ textAlign: 'right' }}>{d.refunded ? U.bnNumber(d.refunded) : DASH}</td>
                     <td style={{ textAlign: 'right', fontWeight: 700 }}>
                       <span className={d.tenancy && d.tenancy.toMonth && d.balance > 0 ? 'due-amount' : undefined}>{U.bnNumber(d.balance)}</span>
@@ -1716,7 +1783,14 @@ export function ReportView({
                   <tr>
                     <td colSpan={3} style={{ textAlign: 'right' }}>সর্বমোট</td>
                     <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopDepositTot.received)}</td>
-                    <td style={{ textAlign: 'right' }}>{U.bnNumber(shopDepositTot.adjusted)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {U.bnNumber(shopDepositTot.adjusted)}
+                      {shopDepositTot.adjustedElec > 0 && (
+                        <div style={{ fontSize: '8px', fontWeight: 400, lineHeight: 1.1 }}>
+                          ভাড়া {U.bnNumber(shopDepositTot.adjustedRent)} / বিদ্যুৎ {U.bnNumber(shopDepositTot.adjustedElec)}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ textAlign: 'right' }}>{U.bnNumber(shopDepositTot.refunded)}</td>
                     <td style={{ textAlign: 'right' }}>{U.bnNumber(shopDepositTot.balance)}</td>
                     <td></td>
@@ -1782,13 +1856,22 @@ export function ReportView({
           <>
             <div style={{ marginBottom: '8px', fontSize: '11px', color: '#1e293b' }}>
               দোকান: <b className="flat-no">{Calc.shopLabel(shopLedgerShop)}</b> &nbsp;|&nbsp;
-              ভাড়াটিয়া: <b className="owner-name">{Calc.shopTenantName(shopLedgerShop, selectedMonth) || Calc.shopTenantName(shopLedgerShop) || '—'}</b> &nbsp;|&nbsp;
-              মোবাইল: <b>{(Calc.shopTenancyFor(shopLedgerShop, selectedMonth) || {}).phone || shopLedgerShop.phone || '—'}</b> &nbsp;|&nbsp;
+              ভাড়াটিয়া: <b className="owner-name">
+                {shopLedgerTenancy
+                  ? (shopLedgerTenancy.tenantName || 'নামহীন')
+                  : (Calc.shopTenantName(shopLedgerShop, selectedMonth) || Calc.shopTenantName(shopLedgerShop) || '—')}
+              </b> &nbsp;|&nbsp;
+              মোবাইল: <b>{(shopLedgerTenancy || Calc.shopTenancyFor(shopLedgerShop, selectedMonth) || {}).phone || shopLedgerShop.phone || '—'}</b> &nbsp;|&nbsp;
               মাসিক ভাড়া: <b>{U.bnTaka(shopLedgerStatus.monthRate)}</b> &nbsp;|&nbsp;
-              ভাড়া শুরু: <b>{U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))}</b>
+              {shopLedgerTenancy ? (
+                <>সময়কাল: <b>{U.monthLabelShort(shopLedgerFrom)} হতে {shopLedgerTenancy.toMonth ? U.monthLabelShort(shopLedgerTenancy.toMonth) : 'চলছে'}</b>
+                  {' '}({U.bnDigits(shopLedgerRows.length)} মাস)</>
+              ) : (
+                <>ভাড়া শুরু: <b>{U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))}</b></>
+              )}
             </div>
 
-            {shopLedgerTenancies.length > 0 && (
+            {shopLedgerTenancies.length > 0 && !shopLedgerTenancy && (
               <div style={{ marginBottom: '8px', fontSize: '10px', color: '#334155' }}>
                 <b>ভাড়াটিয়ার ইতিহাস:</b>{' '}
                 {shopLedgerTenancies.map((t, i) => (
@@ -1818,7 +1901,7 @@ export function ReportView({
                   <tr key={lr.month} className={lr.vacant ? 'vacant-row' : undefined}>
                     <td style={{ textAlign: 'left' }}>
                       <b>{lr.label}</b>
-                      {lr.tenancy && shopLedgerTenancies.length > 1 && (
+                      {lr.tenancy && shopLedgerTenancies.length > 1 && !shopLedgerTenancy && (
                         <span style={{ fontSize: '8.5px', color: '#475569' }}> — {lr.tenancy.tenantName || 'নামহীন'}</span>
                       )}
                       {lr.depositIn > 0 && <div style={{ fontSize: '8.5px', color: '#a16207' }}>অ্যাডভান্স গ্রহণ {U.bnNumber(lr.depositIn)}</div>}
@@ -1829,7 +1912,12 @@ export function ReportView({
                     </td>
                     <td className="col-paid" style={{ textAlign: 'right' }}>{lr.rent + lr.other ? U.bnNumber(lr.rent + lr.other) : (lr.vacant ? '' : DASH)}</td>
                     <td style={{ textAlign: 'right' }}>{lr.adjust ? U.bnNumber(lr.adjust) : ''}</td>
-                    <td style={{ textAlign: 'right' }}>{lr.electricity ? U.bnNumber(lr.electricity) : ''}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {lr.electricity ? U.bnNumber(lr.electricity) : ''}
+                      {lr.electricityAdjust > 0 && (
+                        <div style={{ fontSize: '8px', fontWeight: 400, color: '#475569', lineHeight: 1.1 }}>অ্যাড. {U.bnNumber(lr.electricityAdjust)}</div>
+                      )}
+                    </td>
                     <td style={{ textAlign: 'center', fontSize: '9px' }}>{lr.paidMonths.map(U.monthLabelShort).join(', ')}</td>
                     <td style={{ textAlign: 'center', fontSize: '9px', color: '#334155' }}>
                       {lr.collectorIds.map(getCollectorName).filter(Boolean).join(', ')}
@@ -1848,7 +1936,12 @@ export function ReportView({
                   <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerStatus.charged)}</td>
                   <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerStatus.paidRent + shopLedgerStatus.paidOther)}</td>
                   <td style={{ textAlign: 'right' }}>{shopLedgerStatus.paidAdjust ? U.bnNumber(shopLedgerStatus.paidAdjust) : ''}</td>
-                  <td style={{ textAlign: 'right' }}>{shopLedgerStatus.electricity ? U.bnNumber(shopLedgerStatus.electricity) : ''}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    {shopLedgerStatus.electricity ? U.bnNumber(shopLedgerStatus.electricity) : ''}
+                    {shopLedgerStatus.electricityAdjust > 0 && (
+                      <div style={{ fontSize: '8px', fontWeight: 400, lineHeight: 1.1 }}>অ্যাড. {U.bnNumber(shopLedgerStatus.electricityAdjust)}</div>
+                    )}
+                  </td>
                   <td colSpan={2}></td>
                   <td style={{ textAlign: 'right' }}>
                     {shopLedgerStatus.due > 0
@@ -1861,19 +1954,25 @@ export function ReportView({
 
             <div className="print-totals" style={{ marginTop: '12px' }}>
               <div className="box">
-                মোট ধার্য ({U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))} হতে {monthShort}):{' '}
+                মোট ধার্য ({U.monthLabelShort(shopLedgerFrom)} হতে {shopLedgerToShort}):{' '}
                 <b>{U.bnNumber(shopLedgerStatus.charged)}/-</b>
               </div>
               <div className="box">
-                মোট পরিশোধিত (নগদ + অ্যাডভান্স সমন্বয়):{' '}
+                মোট পরিশোধিত (নগদ {U.bnNumber(shopLedgerStatus.paidRent + shopLedgerStatus.paidOther)} + অ্যাডভান্স সমন্বয় {U.bnNumber(shopLedgerStatus.paidAdjust)}):{' '}
                 <b className="amt-paid">{U.bnNumber(shopLedgerStatus.paid)}/-</b>
                 <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
                   বিদ্যুৎ বিল আলাদা {U.bnNumber(shopLedgerStatus.electricity)}/-
+                  {shopLedgerStatus.electricityAdjust > 0 && (
+                    <> (নগদ {U.bnNumber(shopLedgerStatus.electricityCash)} + অ্যাডভান্স থেকে {U.bnNumber(shopLedgerStatus.electricityAdjust)})</>
+                  )}
                 </div>
               </div>
               <div className="box" style={{ border: '2px solid #000' }}>
-                বকেয়া পাওনা ({monthShort} পর্যন্ত):{' '}
+                বকেয়া পাওনা ({shopLedgerToShort} পর্যন্ত):{' '}
                 <b className="amt-due">{U.bnNumber(shopLedgerStatus.due)}/-</b>
+                {shopLedgerStatus.advance > 0 && (
+                  <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>অগ্রীম জমা {U.bnNumber(shopLedgerStatus.advance)}/-</div>
+                )}
               </div>
               {shopLedgerDeposit && (shopLedgerDeposit.received > 0 || shopLedgerDeposit.agreed > 0) && (
                 <div className="box">
@@ -1881,12 +1980,33 @@ export function ReportView({
                   <b className="amt-advance">{U.bnNumber(shopLedgerDeposit.balance)}/-</b>
                   <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
                     গ্রহণ {U.bnNumber(shopLedgerDeposit.received)} − সমন্বয় {U.bnNumber(shopLedgerDeposit.adjusted)}
+                    {shopLedgerDeposit.adjustedElec > 0 ? ` (ভাড়া ${U.bnNumber(shopLedgerDeposit.adjustedRent)}, বিদ্যুৎ ${U.bnNumber(shopLedgerDeposit.adjustedElec)})` : ''}
                     {shopLedgerDeposit.refunded > 0 ? ` − ফেরত ${U.bnNumber(shopLedgerDeposit.refunded)}` : ''}
                     {shopLedgerDeposit.agreed > 0 ? ` • চুক্তি ${U.bnNumber(shopLedgerDeposit.agreed)}` : ''}
                   </div>
                 </div>
               )}
             </div>
+
+            {/* ছেড়ে যাওয়া ভাড়াটিয়ার চূড়ান্ত হিসাব — জামানতে যা বাকি, বকেয়া বাদ দিয়ে নিট পাওনা */}
+            {shopLedgerTenancy && shopLedgerTenancy.toMonth && shopLedgerDeposit && (
+              <div className="print-totals" style={{ marginTop: '8px' }}>
+                <div className="box" style={{ flex: '1 1 100%', border: '2px solid #000' }}>
+                  চূড়ান্ত হিসাব ({U.monthLabelShort(shopLedgerTenancy.toMonth)}-এ দোকান ছেড়েছেন):{' '}
+                  জামানত জমা {U.bnNumber(shopLedgerDeposit.received)} − সমন্বয় {U.bnNumber(shopLedgerDeposit.adjusted)}
+                  {' '}= {U.bnNumber(shopLedgerDeposit.received - shopLedgerDeposit.adjusted)}
+                  {shopLedgerStatus.due > 0 && <> − ভাড়ার বকেয়া {U.bnNumber(shopLedgerStatus.due)}</>}
+                  {' '}→ {shopLedgerStmt.netRefund + shopLedgerDeposit.refunded >= 0 ? 'ফেরতযোগ্য' : 'ভাড়াটিয়ার কাছে পাওনা'}{' '}
+                  <b className={shopLedgerStmt.netRefund + shopLedgerDeposit.refunded >= 0 ? 'amt-advance' : 'amt-due'}>
+                    {U.bnNumber(Math.abs(shopLedgerStmt.netRefund + shopLedgerDeposit.refunded))}/-
+                  </b>
+                  {shopLedgerDeposit.refunded > 0 && (
+                    <>; ফেরত দেওয়া হয়েছে {U.bnNumber(shopLedgerDeposit.refunded)}/-, বাকি{' '}
+                      <b className={shopLedgerStmt.netRefund > 0 ? 'amt-due' : undefined}>{U.bnNumber(Math.max(0, shopLedgerStmt.netRefund))}/-</b></>
+                  )}
+                </div>
+              </div>
+            )}
 
             {shopLedgerDeposit && shopLedgerDeposit.history.length > 0 && (
               <>
@@ -1904,20 +2024,29 @@ export function ReportView({
                   </thead>
                   <tbody>
                     {shopLedgerDeposit.history.map((r) => (
-                      <tr key={r.id}>
+                      <tr key={r.id || `${r.rentMonth}-${r.kind}`}>
                         <td style={{ textAlign: 'left' }}>{U.monthLabelShort(r.rentMonth)}</td>
                         <td style={{ textAlign: 'left', fontSize: '9.5px' }}>
                           {Calc.shopKindLabel(r.kind)}
-                          {r.kind === 'advance-adjust' && r.paidMonth !== r.rentMonth ? ` (${U.monthLabelShort(r.paidMonth)} এর হিসাবে)` : ''}
+                          {Calc.SHOP_ADJUST_KINDS.includes(r.kind) && r.paidMonth !== r.rentMonth ? ` (${U.monthLabelShort(r.paidMonth)} এর হিসাবে)` : ''}
                           {r.note ? ` — ${r.note}` : ''}
                         </td>
                         <td style={{ textAlign: 'right' }}>{r.kind === 'advance' ? U.bnNumber(r.amount) : ''}</td>
-                        <td style={{ textAlign: 'right' }}>{r.kind === 'advance-adjust' ? U.bnNumber(r.amount) : ''}</td>
+                        <td style={{ textAlign: 'right' }}>{Calc.SHOP_ADJUST_KINDS.includes(r.kind) ? U.bnNumber(r.amount) : ''}</td>
                         <td style={{ textAlign: 'right' }}>{r.kind === 'advance-refund' ? U.bnNumber(r.amount) : ''}</td>
                         <td style={{ textAlign: 'center', fontSize: '9px' }}>{getCollectorName(r.collectorId) || ''}</td>
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={2} style={{ textAlign: 'right' }}>মোট — জমা আছে {U.bnNumber(shopLedgerDeposit.balance)}/-</td>
+                      <td style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerDeposit.received)}</td>
+                      <td style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerDeposit.adjusted)}</td>
+                      <td style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerDeposit.refunded)}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
                 </table>
               </>
             )}
@@ -1926,7 +2055,10 @@ export function ReportView({
               <span className="print-note-tag">বি.দ্র.</span>
               <span>
                 ছকটি ভাড়ার মাস অনুযায়ী; "জমার মাস" কলামে কোন মাসের খতিয়ানে টাকাটা উঠেছে। বকেয়া = ধার্য − নগদ জমা −
-                অ্যাডভান্স থেকে সমন্বয়; বিদ্যুৎ বিল আলাদা। "ফাঁকা" মাসে দোকানে ভাড়াটিয়া ছিল না, ভাড়া ধার্য হয়নি।
+                অ্যাডভান্স থেকে সমন্বয়; বিদ্যুৎ বিল আলাদা, "অ্যাড." লেখা অংশ অ্যাডভান্স (জামানত) থেকে কাটা (নগদ নয়)।
+                {shopLedgerTenancy
+                  ? ' এই বিবরণী কেবল উল্লিখিত ভাড়াটিয়ার সময়কালের; অ্যাডভান্স খাতায় ছাড়ার পরের ফেরতও তাঁর খাতাতেই।'
+                  : ' "ফাঁকা" মাসে দোকানে ভাড়াটিয়া ছিল না, ভাড়া ধার্য হয়নি।'}
               </span>
             </div>
 
@@ -1943,7 +2075,8 @@ export function ReportView({
             </div>
 
             <div className="print-foot">
-              {Calc.shopLabel(shopLedgerShop)} &nbsp;|&nbsp; {U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))} হতে {monthShort}{' '}
+              {Calc.shopLabel(shopLedgerShop)}{shopLedgerTenancy ? ` — ${shopLedgerTenancy.tenantName || 'নামহীন'}` : ''} &nbsp;|&nbsp;{' '}
+              {U.monthLabelShort(shopLedgerFrom)} হতে {shopLedgerToShort}{' '}
               ({U.bnDigits(shopLedgerRows.length)} মাস) &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
             </div>
           </>

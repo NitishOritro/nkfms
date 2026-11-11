@@ -58,6 +58,8 @@ export function ShopRentEntryFormView() {
   const [mode, setMode] = useState('rent');
   // ভাড়ার কতটা ভাড়াটিয়ার অ্যাডভান্স থেকে কেটে সমন্বয় হলো — নগদ নয়
   const [adjustAmount, setAdjustAmount] = useState('');
+  // বিদ্যুৎ বিলের কতটা অ্যাডভান্স থেকে কাটা হলো — নগদ নয়, জামানত কমে
+  const [elecAdjustAmount, setElecAdjustAmount] = useState('');
   const [depKind, setDepKind] = useState('advance'); // 'advance' | 'advance-refund'
   const [depMonth, setDepMonth] = useState(selectedMonth);
   const [depAmount, setDepAmount] = useState('');
@@ -206,6 +208,26 @@ export function ShopRentEntryFormView() {
     () => shopRents.filter((r) => r.kind === 'advance-adjust' && adjustAllocation.some((a) => a.month === r.rentMonth)),
     [shopRents, adjustAllocation]
   );
+  // বিদ্যুৎ বিল অ্যাডভান্স থেকে — বিলের মাসগুলোতে ভাগ: নির্ধারিত অংশ থাকলে
+  // সেটি, নইলে সমান ভাগ; শেষ মাসে যা বাকি (নগদ বিলের মতোই)
+  const elecAdjustNum = Number(elecAdjustAmount) || 0;
+  const elecAdjustAllocation = useMemo(() => {
+    if (elecAdjustNum <= 0 || !elecMonths.length) return [];
+    const share = shop && Number(shop.electricityShare) > 0
+      ? Number(shop.electricityShare)
+      : Math.floor(elecAdjustNum / elecMonths.length);
+    let remaining = elecAdjustNum;
+    const last = elecMonths.length - 1;
+    return elecMonths.map((m, i) => {
+      const take = i === last ? remaining : Math.min(share, remaining);
+      remaining -= take;
+      return { month: m, amount: take };
+    }).filter((a) => a.amount > 0);
+  }, [shop, elecAdjustNum, elecMonths]);
+  const existingElecAdjust = useMemo(
+    () => shopRents.filter((r) => r.kind === 'advance-adjust-elec' && elecAdjustAllocation.some((a) => a.month === r.rentMonth)),
+    [shopRents, elecAdjustAllocation]
+  );
   // অ্যাডভান্স গ্রহণ/ফেরত — ঐ মাসে একই ধরনের এন্ট্রি আগে থাকলে
   const depNum = Number(depAmount) || 0;
   const existingDep = useMemo(
@@ -217,7 +239,8 @@ export function ShopRentEntryFormView() {
     : [
       ...existingRent.map((r) => `${U.monthLabelShort(r.rentMonth)} ভাড়া ${U.bnTaka(r.amount)}`),
       ...existingElec.map((r) => `${U.monthLabelShort(r.rentMonth)} বিদ্যুৎ বিল ${U.bnTaka(r.amount)}`),
-      ...existingAdjust.map((r) => `${U.monthLabelShort(r.rentMonth)} অ্যাডভান্স সমন্বয় ${U.bnTaka(r.amount)}`)
+      ...existingAdjust.map((r) => `${U.monthLabelShort(r.rentMonth)} অ্যাডভান্স সমন্বয় ${U.bnTaka(r.amount)}`),
+      ...existingElecAdjust.map((r) => `${U.monthLabelShort(r.rentMonth)} বিদ্যুৎ বিল অ্যাডভান্স থেকে ${U.bnTaka(r.amount)}`)
     ];
   const hasExisting = existingLabels.length > 0;
 
@@ -244,6 +267,7 @@ export function ShopRentEntryFormView() {
     setError('');
     setOverwriteMode('');
     setAdjustAmount('');
+    setElecAdjustAmount('');
     setDepAmount('');
     setDepKind('advance');
     if (!keepMonth) { setPaidMonth(selectedMonth); setDepMonth(selectedMonth); }
@@ -292,17 +316,26 @@ export function ShopRentEntryFormView() {
 
     // ---- ভাড়া / বিদ্যুৎ আদায় ----
     if (!paidMonth) { setError('জমার মাস নির্বাচন করুন।'); return; }
-    if (rentNum <= 0 && elecNum <= 0 && adjustNum <= 0) {
+    if (rentNum <= 0 && elecNum <= 0 && adjustNum <= 0 && elecAdjustNum <= 0) {
       setError('দোকান ভাড়া, বিদ্যুৎ বিল বা অ্যাডভান্স থেকে সমন্বয় — অন্তত একটির টাকার অঙ্ক লিখুন (০ এর বেশি)।');
       return;
     }
-    if (adjustNum > 0) {
-      if (!selectedRentMonths.length) { setError('অ্যাডভান্স থেকে কোন মাসের ভাড়া কাটছেন, "হতে – পর্যন্ত" ঠিক করে দিন।'); return; }
+    if (adjustNum > 0 && !selectedRentMonths.length) {
+      setError('অ্যাডভান্স থেকে কোন মাসের ভাড়া কাটছেন, "হতে – পর্যন্ত" ঠিক করে দিন।');
+      return;
+    }
+    if (elecAdjustNum > 0 && !elecMonths.length) {
+      setError('অ্যাডভান্স থেকে কোন মাসের বিদ্যুৎ বিল কাটছেন, বিলের "হতে – পর্যন্ত" ঠিক করে দিন।');
+      return;
+    }
+    if (adjustNum + elecAdjustNum > 0) {
       // বদলের বেলায় ঐ মাসগুলোর আগের সমন্বয় ব্যালেন্সে ফিরে আসে
-      const freed = overwriteMode === 'replace' ? existingAdjust.reduce((s, r) => s + Number(r.amount), 0) : 0;
+      const freed = overwriteMode === 'replace'
+        ? [...existingAdjust, ...existingElecAdjust].reduce((s, r) => s + Number(r.amount), 0)
+        : 0;
       const available = (deposit ? deposit.balance : 0) + freed;
-      if (adjustNum > available) {
-        setError(`অ্যাডভান্স জমা আছে মাত্র ${U.bnTaka(Math.max(0, available))} — এর বেশি সমন্বয় করা যাবে না।`);
+      if (adjustNum + elecAdjustNum > available) {
+        setError(`অ্যাডভান্স জমা আছে মাত্র ${U.bnTaka(Math.max(0, available))} — ভাড়া ও বিদ্যুৎ মিলিয়ে এর বেশি সমন্বয় করা যাবে না।`);
         return;
       }
     }
@@ -347,6 +380,15 @@ export function ShopRentEntryFormView() {
         tenancyId: (Calc.shopTenancyFor(shop, a.month) || tenancy || {}).id || ''
       });
     });
+    elecAdjustAllocation.forEach((a) => {
+      const prev = existingElecAdjust.find((r) => r.rentMonth === a.month);
+      const amount = prev && overwriteMode === 'add' ? Number(prev.amount) + a.amount : a.amount;
+      entries.push({
+        shopId: shop.id, rentMonth: a.month, kind: 'advance-adjust-elec', amount,
+        paidMonth, collectorId, note: trimmedNote,
+        tenancyId: (Calc.shopTenancyFor(shop, a.month) || tenancy || {}).id || ''
+      });
+    });
     saveShopRents(entries);
 
     const parts = [];
@@ -363,6 +405,7 @@ export function ShopRentEntryFormView() {
         : `${U.monthLabelShort(elecFrom)} হতে ${U.monthLabelShort(elecTo)}, ${U.bnDigits(elecMonths.length)} মাস`;
       parts.push(`বিদ্যুৎ বিল ${U.bnTaka(elecNum)} (${eLabel})`);
     }
+    if (elecAdjustNum > 0) parts.push(`বিদ্যুৎ বিল অ্যাডভান্স থেকে সমন্বয় ${U.bnTaka(elecAdjustNum)} (নগদ নয়)`);
     addToast(
       `${Calc.shopLabel(shop)} — ${U.monthLabel(paidMonth)} মাসের হিসাবে ${parts.join(' ও ')} সংরক্ষিত হয়েছে।`,
       'success'
@@ -651,6 +694,28 @@ export function ShopRentEntryFormView() {
                   style={{ flex: 1, minWidth: 0 }}
                 />
               </div>
+              {/* বিলের কতটা অ্যাডভান্স (জামানত) থেকে কাটা — নগদ নয় */}
+              {deposit && (deposit.balance > 0 || elecAdjustNum > 0) && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
+                  <label htmlFor="srf-elec-adjust" style={{ fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    অ্যাডভান্স থেকে
+                  </label>
+                  <input
+                    id="srf-elec-adjust"
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    step="1"
+                    className="form-input"
+                    value={elecAdjustAmount}
+                    onChange={(e) => { setElecAdjustAmount(e.target.value); setError(''); }}
+                    placeholder="0"
+                    disabled={!canWrite}
+                    style={{ flex: 1, minWidth: 0 }}
+                    title="বিদ্যুৎ বিলের যে অংশ ভাড়াটিয়ার অ্যাডভান্স (জামানত) থেকে কেটে নেওয়া হলো — নগদ ওঠেনি"
+                  />
+                </div>
+              )}
               {/* বিল কোন কোন মাসের — ভাড়ার মাসের পরিসর নিজে বসে, দরকারে বদলানো যায় */}
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
                 <select
@@ -701,6 +766,12 @@ export function ShopRentEntryFormView() {
                 {' '}· বিলের মাস নিজে বসে ভাড়ার মাসের পরিসরই, দরকারে বদলান
                 {elecAllocation.length > 1 && (
                   <> · মাসওয়ারি: {elecAllocation.map((a) => `${U.monthLabelShort(a.month)} ${U.bnNumber(a.amount)}`).join(', ')}</>
+                )}
+                {deposit && deposit.balance > 0 && (
+                  <> · বিলও অ্যাডভান্স থেকে কাটা যায় (জমা {U.bnTaka(deposit.balance - adjustNum)}) — "অ্যাডভান্স থেকে" ঘরে লিখুন, নগদ ওঠবে না</>
+                )}
+                {elecAdjustAllocation.length > 1 && (
+                  <> · অ্যাডভান্স থেকে মাসওয়ারি: {elecAdjustAllocation.map((a) => `${U.monthLabelShort(a.month)} ${U.bnNumber(a.amount)}`).join(', ')}</>
                 )}
               </span>
             </div>
@@ -793,7 +864,7 @@ export function ShopRentEntryFormView() {
               <span className="charge-field-hint">
                 <Lock size={12} />{' '}
                 {deposit
-                  ? `গ্রহণ ${U.bnTaka(deposit.received)} − ভাড়ায় সমন্বয় ${U.bnTaka(deposit.adjusted)} − ফেরত ${U.bnTaka(deposit.refunded)}`
+                  ? `গ্রহণ ${U.bnTaka(deposit.received)} − সমন্বয় ${U.bnTaka(deposit.adjusted)}${deposit.adjustedElec > 0 ? ` (ভাড়া ${U.bnTaka(deposit.adjustedRent)}, বিদ্যুৎ ${U.bnTaka(deposit.adjustedElec)})` : ''} − ফেরত ${U.bnTaka(deposit.refunded)}`
                   : 'স্বয়ংক্রিয় — গ্রহণ, সমন্বয় ও ফেরতের হিসাব থেকে'}
               </span>
             </div>
@@ -925,6 +996,28 @@ export function ShopRentEntryFormView() {
                       {d.tenancy.tenantName || 'নামহীন'} ({U.monthLabelShort(d.tenancy.fromMonth)} হতে {d.tenancy.toMonth ? U.monthLabelShort(d.tenancy.toMonth) : 'চলছে'}):
                       জমা আছে <b>{U.bnTaka(d.balance)}</b>
                       {d.tenancy.toMonth && d.balance > 0 ? ' — ছেড়ে গেছেন, ফেরত বাকি' : ''}
+                      {canWrite && d.tenancy.toMonth && d.balance > 0 && (
+                        <>
+                          {' '}
+                          <button
+                            type="button"
+                            className="link-btn"
+                            onClick={() => {
+                              // ছাড়ার পরের মাসে (জমার মাসের তালিকায় থাকলে) পুরো জমা ফেরত — ঘরগুলো ভরে দেয়, সংরক্ষণ আপনি
+                              const next = U.addMonths(d.tenancy.toMonth, 1);
+                              setTenancyId(d.tenancy.id);
+                              setDepKind('advance-refund');
+                              setDepAmount(String(d.balance));
+                              setDepMonth(paidMonths.includes(next) ? next : paidMonths[paidMonths.length - 1] || next);
+                              if (!note) setNote(`${d.tenancy.tenantName || 'আগের ভাড়াটিয়া'}-কে জামানতের বাকি ফেরত`);
+                              setOverwriteMode('');
+                              setError('');
+                            }}
+                          >
+                            ফেরত লিখুন
+                          </button>
+                        </>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -934,7 +1027,7 @@ export function ShopRentEntryFormView() {
                   {deposit.history.map((r) => (
                     <li key={r.id}>
                       {U.monthLabelShort(r.rentMonth)}: {Calc.shopKindLabel(r.kind)} <b>{U.bnTaka(r.amount)}</b>
-                      {r.kind === 'advance-adjust' && r.paidMonth !== r.rentMonth ? ` (${U.monthLabelShort(r.paidMonth)} এর হিসাবে)` : ''}
+                      {Calc.SHOP_ADJUST_KINDS.includes(r.kind) && r.paidMonth !== r.rentMonth ? ` (${U.monthLabelShort(r.paidMonth)} এর হিসাবে)` : ''}
                       {r.note ? ` — ${r.note}` : ''}
                     </li>
                   ))}
@@ -1020,8 +1113,14 @@ export function ShopRentEntryFormView() {
               </div>
               {mode === 'rent' && adjustNum > 0 && (
                 <div className="s-item">
-                  <span className="s-label">অ্যাডভান্স থেকে সমন্বয়</span>
+                  <span className="s-label">অ্যাডভান্স থেকে ভাড়া সমন্বয়</span>
                   <span className="s-value" style={{ color: 'var(--warning-dark)' }}>{U.bnTaka(adjustNum)}</span>
+                </div>
+              )}
+              {mode === 'rent' && elecAdjustNum > 0 && (
+                <div className="s-item">
+                  <span className="s-label">অ্যাডভান্স থেকে বিদ্যুৎ বিল</span>
+                  <span className="s-value" style={{ color: 'var(--warning-dark)' }}>{U.bnTaka(elecAdjustNum)}</span>
                 </div>
               )}
               {deposit && (deposit.received > 0 || deposit.agreed > 0) && (

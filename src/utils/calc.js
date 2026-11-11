@@ -475,7 +475,9 @@ export const SHOP_RENT_KINDS = [
   { id: 'other', label: 'অন্যান্য / সমন্বয়' },
   // অ্যাডভান্স (জামানত): গ্রহণ নগদে ঢোকে, সমন্বয় নগদ নয় (ভাড়া থেকে কাটা),
   // ফেরত নগদে বেরোয়। ব্যালেন্স = গ্রহণ − সমন্বয় − ফেরত।
-  { id: 'advance-adjust', label: 'অ্যাডভান্স থেকে সমন্বয়' },
+  { id: 'advance-adjust', label: 'অ্যাডভান্স থেকে ভাড়া সমন্বয়' },
+  // বিদ্যুৎ বিলও অ্যাডভান্স থেকে কাটা যায় — জামানত কমে, বিল পরিশোধ ধরা হয়, নগদ নয়
+  { id: 'advance-adjust-elec', label: 'অ্যাডভান্স থেকে বিদ্যুৎ বিল সমন্বয়' },
   { id: 'advance', label: 'অ্যাডভান্স (জামানত) গ্রহণ' },
   { id: 'advance-refund', label: 'অ্যাডভান্স ফেরত' }
 ];
@@ -483,6 +485,8 @@ export const SHOP_RENT_KINDS = [
 export const SHOP_CASH_KINDS = ['rent', 'electricity', 'other'];
 /** যে খাতগুলো ভাড়ার পাওনা মেটায় (নগদ হোক বা অ্যাডভান্স থেকে কাটা) */
 export const SHOP_SETTLING_KINDS = ['rent', 'other', 'advance-adjust'];
+/** অ্যাডভান্স থেকে কাটা — দুই রকম (ভাড়া / বিদ্যুৎ); দুটোই জামানত কমায়, নগদ নয় */
+export const SHOP_ADJUST_KINDS = ['advance-adjust', 'advance-adjust-elec'];
 
 export function shopKindLabel(kind) {
   const k = SHOP_RENT_KINDS.find((x) => x.id === kind);
@@ -656,7 +660,9 @@ export function shopStatus(data, shop, asOfMonth) {
   const paidOther = sumAmt(rents.filter((r) => r.kind === 'other'));
   // অ্যাডভান্স থেকে কাটা — নগদ নয়, কিন্তু ঐ মাসের ভাড়া পরিশোধিত
   const paidAdjust = sumAmt(rents.filter((r) => r.kind === 'advance-adjust'));
-  const electricity = sumAmt(rents.filter((r) => r.kind === 'electricity'));
+  // বিদ্যুৎ বিল: নগদে দেওয়া + অ্যাডভান্স থেকে কাটা = মোট পরিশোধিত বিল
+  const electricityCash = sumAmt(rents.filter((r) => r.kind === 'electricity'));
+  const electricityAdjust = sumAmt(rents.filter((r) => r.kind === 'advance-adjust-elec'));
   const balance = charged - paidRent - paidOther - paidAdjust;
   return {
     shop,
@@ -665,7 +671,9 @@ export function shopStatus(data, shop, asOfMonth) {
     paidOther,
     paidAdjust,
     paid: paidRent + paidOther + paidAdjust,
-    electricity,
+    electricity: electricityCash + electricityAdjust,
+    electricityCash,
+    electricityAdjust,
     balance,
     due: balance > 0 ? balance : 0,
     // "advance" এখানে অগ্রীম (বেশি দেওয়া ভাড়া) — অ্যাডভান্স/জামানত নয়, সেটি deposit
@@ -688,7 +696,9 @@ export function shopDeposit(data, shop, asOfMonth, tenancy) {
   // নির্দিষ্ট ভাড়াটিয়ার খাতা চাইলে — কেবল তাঁর সারিগুলো
   if (tenancy) rows = rows.filter((r) => (shopTenancyForDeposit(shop, r.rentMonth, r) || {}).id === tenancy.id);
   const received = sumAmt(rows.filter((r) => r.kind === 'advance'));
-  const adjusted = sumAmt(rows.filter((r) => r.kind === 'advance-adjust'));
+  const adjustedRent = sumAmt(rows.filter((r) => r.kind === 'advance-adjust'));
+  const adjustedElec = sumAmt(rows.filter((r) => r.kind === 'advance-adjust-elec'));
+  const adjusted = adjustedRent + adjustedElec;
   const refunded = sumAmt(rows.filter((r) => r.kind === 'advance-refund'));
   // চুক্তির অঙ্ক — ভাড়াটিয়ার (দেওয়া থাকলে বা বর্তমানজনের), নইলে দোকানের
   const t = tenancy || shopCurrentTenancy(shop, asOfMonth);
@@ -697,6 +707,8 @@ export function shopDeposit(data, shop, asOfMonth, tenancy) {
   return {
     received,
     adjusted,
+    adjustedRent,
+    adjustedElec,
     refunded,
     balance: received - adjusted - refunded,
     agreed,
@@ -713,6 +725,69 @@ export function shopDepositByTenancy(data, shop, asOfMonth) {
   return shopTenancies(shop).map((t) => ({ tenancy: t, ...shopDeposit(data, shop, asOfMonth, t) }));
 }
 
+/**
+ * একটি ভাড়াটিয়ার সময়কালের (fromMonth – toMonth/asOfMonth) পূর্ণ হিসাব — ছাড়ার
+ * সময়ের "চূড়ান্ত হিসাব": ধার্য, নগদ, সমন্বয়, বকেয়া, বিদ্যুৎ, অ্যাডভান্সের খাতা।
+ * tenancy null হলে পুরো দোকানের হিসাবই (শুরু থেকে asOfMonth)।
+ */
+export function shopTenancyStatement(data, shop, tenancy, asOfMonth) {
+  if (!tenancy) {
+    const status = shopStatus(data, shop, asOfMonth);
+    return {
+      tenancy: null,
+      fromMonth: shopStartMonth(shop, data.settings),
+      toMonth: asOfMonth,
+      rows: shopLedger(data, shop, asOfMonth),
+      status,
+      deposit: status.deposit,
+      netRefund: status.deposit.balance - status.due
+    };
+  }
+  const endIdx = Math.min(
+    U.monthIndex(asOfMonth),
+    tenancy.toMonth ? U.monthIndex(tenancy.toMonth) : Infinity
+  );
+  const toMonth = U.indexToMonth(endIdx);
+  const rows = shopLedger(data, shop, toMonth).filter(
+    (r) => U.monthIndex(r.month) >= U.monthIndex(tenancy.fromMonth) && (r.tenancy || {}).id === tenancy.id
+  );
+  const sumRow = (k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
+  const charged = sumRow('charge');
+  const paidRent = sumRow('rent');
+  const paidOther = sumRow('other');
+  const paidAdjust = sumRow('adjust');
+  const balance = charged - paidRent - paidOther - paidAdjust;
+  // অ্যাডভান্সের সারি — ভাড়াটিয়ার id ধরে; সময়কালের বাইরে (ছাড়ার পরের মাসে
+  // ফেরত) পড়লেও তাঁর খাতাতেই
+  const deposit = shopDeposit(data, shop, asOfMonth, tenancy);
+  const status = {
+    shop,
+    charged,
+    paidRent,
+    paidOther,
+    paidAdjust,
+    paid: paidRent + paidOther + paidAdjust,
+    electricity: sumRow('electricity'),
+    electricityCash: sumRow('electricityCash'),
+    electricityAdjust: sumRow('electricityAdjust'),
+    balance,
+    due: balance > 0 ? balance : 0,
+    advance: balance < 0 ? -balance : 0,
+    deposit,
+    monthRate: Number(tenancy.rent) > 0 ? Number(tenancy.rent) : shopRentForMonth(shop, tenancy.fromMonth)
+  };
+  return {
+    tenancy,
+    fromMonth: tenancy.fromMonth,
+    toMonth,
+    rows,
+    status,
+    deposit,
+    // ছাড়ার পর নিট পাওনা: জামানতে যা বাকি − ভাড়ার বকেয়া (ঋণাত্মক = ভাড়াটিয়া দেবেন)
+    netRefund: deposit.balance - status.due
+  };
+}
+
 /** সব দোকানের অ্যাডভান্স মিলিয়ে — সমিতির কাছে ভাড়াটিয়াদের মোট জমা (দায়) */
 export function shopDepositTotals(data, asOfMonth) {
   return shopsSorted(data, true).reduce(
@@ -720,12 +795,14 @@ export function shopDepositTotals(data, asOfMonth) {
       const d = shopDeposit(data, shop, asOfMonth);
       acc.received += d.received;
       acc.adjusted += d.adjusted;
+      acc.adjustedRent += d.adjustedRent;
+      acc.adjustedElec += d.adjustedElec;
       acc.refunded += d.refunded;
       acc.balance += d.balance;
       if (d.received || d.adjusted || d.refunded) acc.shopCount += 1;
       return acc;
     },
-    { received: 0, adjusted: 0, refunded: 0, balance: 0, shopCount: 0 }
+    { received: 0, adjusted: 0, adjustedRent: 0, adjustedElec: 0, refunded: 0, balance: 0, shopCount: 0 }
   );
 }
 
@@ -745,7 +822,8 @@ export function shopLedger(data, shop, asOfMonth) {
     const rent = sumAmt(inMonth.filter((r) => r.kind === 'rent'));
     const other = sumAmt(inMonth.filter((r) => r.kind === 'other'));
     const adjust = sumAmt(inMonth.filter((r) => r.kind === 'advance-adjust'));
-    const electricity = sumAmt(inMonth.filter((r) => r.kind === 'electricity'));
+    const electricityCash = sumAmt(inMonth.filter((r) => r.kind === 'electricity'));
+    const electricityAdjust = sumAmt(inMonth.filter((r) => r.kind === 'advance-adjust-elec'));
     const depositIn = sumAmt(inMonth.filter((r) => r.kind === 'advance'));
     const depositOut = sumAmt(inMonth.filter((r) => r.kind === 'advance-refund'));
     running += charge - rent - other - adjust;
@@ -760,7 +838,10 @@ export function shopLedger(data, shop, asOfMonth) {
       rent,
       other,
       adjust,
-      electricity,
+      // বিদ্যুৎ বিল মোট (নগদ + অ্যাডভান্স থেকে কাটা); ভাগ আলাদা
+      electricity: electricityCash + electricityAdjust,
+      electricityCash,
+      electricityAdjust,
       depositIn,
       depositOut,
       paid: rent + other + adjust,
@@ -790,7 +871,8 @@ export function shopRentByPaidMonth(data, paidMonth) {
       // অ্যাডভান্স: গ্রহণ ও ফেরত নগদ (আলাদা খাত), সমন্বয় নগদ নয় — স্মারক
       const deposit = sumAmt(items.filter((r) => r.kind === 'advance'));
       const refund = sumAmt(items.filter((r) => r.kind === 'advance-refund'));
-      const adjust = sumAmt(items.filter((r) => r.kind === 'advance-adjust'));
+      const adjustRent = sumAmt(items.filter((r) => r.kind === 'advance-adjust'));
+      const adjustElec = sumAmt(items.filter((r) => r.kind === 'advance-adjust-elec'));
       return {
         shop,
         items,
@@ -799,7 +881,10 @@ export function shopRentByPaidMonth(data, paidMonth) {
         other,
         deposit,
         refund,
-        adjust,
+        // সমন্বয় মোট (ভাড়া + বিদ্যুৎ), ভাগ আলাদা
+        adjust: adjustRent + adjustElec,
+        adjustRent,
+        adjustElec,
         // "মোট" = দোকান-ভাড়া খাতে নগদ জমা; অ্যাডভান্স গ্রহণ/ফেরত আলাদা কলামে
         total: rent + electricity + other,
         rentMonths: Array.from(
@@ -902,6 +987,8 @@ export function shopRentMatrix(data, fromMonth, toMonth) {
         other: sumAmt(inMonth.filter((r) => r.kind === 'other')),
         // অ্যাডভান্স থেকে কাটা — ভাড়া পরিশোধ ধরা হয়, নগদ নয়
         adjust: sumAmt(inMonth.filter((r) => r.kind === 'advance-adjust')),
+        // বিদ্যুৎ বিলের যে অংশ অ্যাডভান্স থেকে কাটা (উপরের electricity-তে নেই)
+        electricityAdjust: sumAmt(inMonth.filter((r) => r.kind === 'advance-adjust-elec')),
         // জমার মাস — ভাড়া/বিদ্যুৎ/সমন্বয়ের; অ্যাডভান্স গ্রহণ/ফেরতের মাস এখানে নয়
         paidMonths: Array.from(new Set(
           inMonth.filter((r) => r.kind !== 'advance' && r.kind !== 'advance-refund').map((r) => r.paidMonth).filter(Boolean)
@@ -917,9 +1004,10 @@ export function shopRentMatrix(data, fromMonth, toMonth) {
           rent: a.rent + c.rent,
           electricity: a.electricity + c.electricity,
           other: a.other + c.other,
-          adjust: a.adjust + c.adjust
+          adjust: a.adjust + c.adjust,
+          electricityAdjust: a.electricityAdjust + c.electricityAdjust
         }),
-        { charge: 0, rent: 0, electricity: 0, other: 0, adjust: 0 }
+        { charge: 0, rent: 0, electricity: 0, other: 0, adjust: 0, electricityAdjust: 0 }
       ),
       status: shopStatus(data, shop, toMonth)
     };
@@ -932,9 +1020,10 @@ export function shopRentMatrix(data, fromMonth, toMonth) {
         rent: a.rent + r.cells[i].rent,
         electricity: a.electricity + r.cells[i].electricity,
         other: a.other + r.cells[i].other,
-        adjust: a.adjust + r.cells[i].adjust
+        adjust: a.adjust + r.cells[i].adjust,
+        electricityAdjust: a.electricityAdjust + r.cells[i].electricityAdjust
       }),
-      { month: m, charge: 0, rent: 0, electricity: 0, other: 0, adjust: 0 }
+      { month: m, charge: 0, rent: 0, electricity: 0, other: 0, adjust: 0, electricityAdjust: 0 }
     )
   );
   return { months, rows, colTotals };
@@ -955,9 +1044,13 @@ export function shopRentLedgerRows(data, paidMonth) {
   // একই মাসে (paidMonth) কোন দোকানের কত অ্যাডভান্স থেকে কাটা হলো — ভাড়ার
   // লাইনের শেষে স্মারক হিসেবে, যোগফলে নয়
   const adjustByShop = new Map();
+  const elecAdjustByShop = new Map();
   allInMonth
     .filter((r) => r.kind === 'advance-adjust')
     .forEach((r) => adjustByShop.set(r.shopId, (adjustByShop.get(r.shopId) || 0) + (Number(r.amount) || 0)));
+  allInMonth
+    .filter((r) => r.kind === 'advance-adjust-elec')
+    .forEach((r) => elecAdjustByShop.set(r.shopId, (elecAdjustByShop.get(r.shopId) || 0) + (Number(r.amount) || 0)));
 
   const people = new Map(
     (data.settings.collectors || []).map((c) => [
@@ -1005,8 +1098,10 @@ export function shopRentLedgerRows(data, paidMonth) {
         // ঐ দোকানের এ মাসে অ্যাডভান্স থেকে কাটা থাকলে — স্মারক, নগদ নয়
         const adj = adjustByShop.get(g.shopId) || 0;
         const adjTxt = adj > 0 ? ` (এছাড়া অ্যাডভান্স থেকে সমন্বয় ${U.bnNumber(adj)}, নগদ নয়)` : '';
+        const eadj = elecAdjustByShop.get(g.shopId) || 0;
+        const eadjTxt = eadj > 0 ? ` (এছাড়া বিদ্যুৎ বিল অ্যাডভান্স থেকে সমন্বয় ${U.bnNumber(eadj)}, নগদ নয়)` : '';
         if (g.kind === 'rent') text = `${who}ের ভাড়া (${monthsTxt}) আদায়${noteTxt}${adjTxt}`;
-        else if (g.kind === 'electricity') text = `${who}ের বিদ্যুৎ বিল (${monthsTxt}) আদায়${noteTxt}`;
+        else if (g.kind === 'electricity') text = `${who}ের বিদ্যুৎ বিল (${monthsTxt}) আদায়${noteTxt}${eadjTxt}`;
         else text = g.notes.length ? g.notes.join('; ') : `${who} — অন্যান্য/সমন্বয় (${monthsTxt})`;
         return { text, amount: g.amount };
       });
