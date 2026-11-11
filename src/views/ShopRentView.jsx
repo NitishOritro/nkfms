@@ -55,9 +55,13 @@ const emptyTenancy = () => ({
    জামানত গ্রহণ — এক লাইনে: চুক্তির অঙ্ক লেখা আছে অথচ গ্রহণের সারি নেই,
    তখন দোকানের ফর্মেই লিখে সেভ করা যায় (নইলে রিপোর্টে কিছুই দেখায় না)
    -------------------------------------------------------------------------- */
-function DepositReceiptQuick({ amount, defaultMonth, monthOptions, collectors, who, onSubmit }) {
-  const [amt, setAmt] = useState(String(amount || ''));
-  const [month, setMonth] = useState(defaultMonth || U.currentMonth());
+function DepositReceiptQuick({ amount, received = 0, existingMonth = '', defaultMonth, monthOptions, collectors, who, onSubmit }) {
+  // চুক্তির ঘরে টাইপ চলাকালেই এই ঘর খুলে যায় — তাই ব্যবহারকারী নিজে না বদলানো
+  // পর্যন্ত টাকার ঘর চুক্তির অঙ্কের সাথে মিলে চলে (নইলে "2" আটকে থাকত)
+  const [amtEdited, setAmtEdited] = useState(null);
+  const amt = amtEdited == null ? String(amount || '') : amtEdited;
+  const setAmt = setAmtEdited;
+  const [month, setMonth] = useState(existingMonth || defaultMonth || U.currentMonth());
   const [collectorId, setCollectorId] = useState(collectors.length === 1 ? collectors[0].id : '');
   const [err, setErr] = useState('');
   const months = monthOptions.includes(month) ? monthOptions : [month, ...monthOptions].sort();
@@ -72,7 +76,10 @@ function DepositReceiptQuick({ amount, defaultMonth, monthOptions, collectors, w
   return (
     <div style={{ gridColumn: '1 / -1', padding: '8px 10px', border: '1px dashed #f59e0b', borderRadius: '8px', background: '#fffbeb', marginBottom: '10px' }}>
       <div style={{ fontSize: '12px', color: '#b45309', fontWeight: 600 }}>
-        {who ? `${who} — ` : ''}চুক্তির অঙ্ক লেখা আছে, কিন্তু জামানত <u>গ্রহণের</u> এন্ট্রি নেই — খতিয়ান ও রিপোর্টে দেখাবে না। এখানেই লিখুন:
+        {who ? `${who} — ` : ''}
+        {received > 0
+          ? <>জামানত গ্রহণ লেখা আছে মাত্র {U.bnTaka(received)}, চুক্তির অঙ্ক {U.bnTaka(amount)} — ভুল হলে ঠিক অঙ্ক লিখুন{existingMonth ? ` (${U.monthLabelShort(existingMonth)} মাসের সারিটি বদলে যাবে)` : ''}:</>
+          : <>চুক্তির অঙ্ক লেখা আছে, কিন্তু জামানত <u>গ্রহণের</u> এন্ট্রি নেই — খতিয়ান ও রিপোর্টে দেখাবে না। এখানেই লিখুন:</>}
       </div>
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', marginTop: '6px' }}>
         <input className="form-input" type="number" min="0" value={amt} style={{ width: '120px', textAlign: 'right' }}
@@ -85,11 +92,12 @@ function DepositReceiptQuick({ amount, defaultMonth, monthOptions, collectors, w
           {collectors.map((c) => <option key={c.id} value={c.id}>{c.bn || c.en}</option>)}
         </select>
         <button type="button" className="btn btn-primary btn-sm" onClick={submit}>
-          <Check size={14} /> গ্রহণ লিখুন
+          <Check size={14} /> {received > 0 ? 'ঠিক করে লিখুন' : 'গ্রহণ লিখুন'}
         </button>
       </div>
       <div className="form-hint" style={{ marginTop: '4px' }}>
-        এটি সাথে সাথে সেভ হয় (ফর্মের "সেভ করুন" লাগে না)। আগস্ট-২৫ বা পরের মাস বাছলে ঐ মাসের খতিয়ানে আয় হিসেবে বসবে; তার আগের মাসে কাগজের খতিয়ান, সেখানে বসবে না।
+        এটি সাথে সাথে সেভ হয় (ফর্মের "সেভ করুন" লাগে না)। একই মাসে আগে কোনো গ্রহণ লেখা থাকলে সেটি বদলে যায়, যোগ হয় না।
+        আগস্ট-২৫ বা পরের মাস বাছলে ঐ মাসের খতিয়ানে আয় হিসেবে বসবে; তার আগের মাসে কাগজের খতিয়ান, সেখানে বসবে না।
       </div>
       {err && <div className="form-error" style={{ marginTop: '4px' }}>{err}</div>}
     </div>
@@ -176,10 +184,12 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTe
             onChange={(e) => set({ advanceAmount: e.target.value })} />
           <div className="form-hint">শুধু তথ্য; আসল গ্রহণ "দোকান ভাড়া এন্ট্রি ফর্ম" → অ্যাডভান্স থেকে লিখুন, বা নিচের ঘরে।</div>
         </div>
-        {draft.id && onReceiveDeposit && deposit && deposit.received === 0 && Number(draft.advanceAmount) > 0 && (
+        {draft.id && onReceiveDeposit && deposit && deposit.received < Number(draft.advanceAmount) && (
           <DepositReceiptQuick
             key={`dep-${draft.id}`}
             amount={Number(draft.advanceAmount)}
+            received={deposit.received}
+            existingMonth={(() => { const a = deposit.history.filter((r) => r.kind === 'advance'); return a.length === 1 ? a[0].rentMonth : ''; })()}
             defaultMonth={draft.joinMonth || ''}
             monthOptions={monthOptions}
             collectors={collectors}
@@ -255,11 +265,14 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTe
             </div>
             {(() => {
               const d = depositByTenancy.find((x) => x.tenancy && x.tenancy.id === t.id);
-              if (!draft.id || !onReceiveDeposit || !d || d.received > 0 || t.toMonth || !(Number(t.advanceAmount) > 0)) return null;
+              if (!draft.id || !onReceiveDeposit || !d || t.toMonth || !(d.received < Number(t.advanceAmount))) return null;
+              const adv = d.history.filter((r) => r.kind === 'advance');
               return (
                 <DepositReceiptQuick
                   key={`dep-${t.id}`}
                   amount={Number(t.advanceAmount)}
+                  received={d.received}
+                  existingMonth={adv.length === 1 ? adv[0].rentMonth : ''}
                   defaultMonth={t.fromMonth || ''}
                   monthOptions={monthOptions}
                   collectors={collectors}
