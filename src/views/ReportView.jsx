@@ -2062,6 +2062,23 @@ export function ReportView({
                     {shopLedgerDeposit.refunded > 0 ? ` − ফেরত ${U.bnNumber(shopLedgerDeposit.refunded)}` : ''}
                     {shopLedgerDeposit.agreed > 0 ? ` • চুক্তি ${U.bnNumber(shopLedgerDeposit.agreed)}` : ''}
                   </div>
+                  {/* যে মাসে ফেরত দেওয়া হয়েছে — ঐ মাসে ক্যাশে নিট কত এল (নতুন ভাড়াটিয়ার
+                      জামানত থেকে পুরোনোকে ফেরত দিলে দুটো আলাদা সারি, নিট অঙ্কটি এখানে) */}
+                  {(() => {
+                    const months = [...new Set(shopLedgerDeposit.history.filter((r) => r.kind === 'advance-refund').map((r) => r.paidMonth || r.rentMonth))].sort();
+                    if (!months.length) return null;
+                    return months.map((m) => {
+                      const inM = shopLedgerDeposit.history.filter((r) => (r.paidMonth || r.rentMonth) === m);
+                      const got = inM.filter((r) => r.kind === 'advance').reduce((a, r) => a + r.amount, 0);
+                      const back = inM.filter((r) => r.kind === 'advance-refund').reduce((a, r) => a + r.amount, 0);
+                      return (
+                        <div key={m} style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px', color: '#334155' }}>
+                          {U.monthLabelShort(m)} এ নগদে: {got > 0 ? `জামানত গ্রহণ ${U.bnNumber(got)} − ` : ''}ফেরত {U.bnNumber(back)}
+                          {' '}= ক্যাশে নিট {got - back >= 0 ? `এসেছে ${U.bnNumber(got - back)}` : `গেছে ${U.bnNumber(back - got)}`}/-
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             ) : (
