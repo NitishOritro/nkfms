@@ -813,11 +813,16 @@ export function shopLedger(data, shop, asOfMonth) {
   const rents = shopRentsOf(data, shop.id);
   const rows = [];
   let running = 0;
+  let prevTenancyId = null;
   for (let i = from; i <= to; i += 1) {
     const month = U.indexToMonth(i);
     const chargeable = shopIsChargeable(shop, data.settings, month);
     const charge = chargeable ? shopRentForMonth(shop, month) : 0;
     const tenancy = shopTenancyFor(shop, month);
+    // ভাড়াটিয়া বদলালে বকেয়া নতুনজনের জন্য শূন্য থেকে শুরু — আগেরজনের পুরো
+    // হিসাব তাঁর চূড়ান্ত বিবরণীতে (shopTenancyStatement); মাঝের ফাঁকা মাস বাদ
+    if (tenancy && prevTenancyId !== null && tenancy.id !== prevTenancyId) running = 0;
+    if (tenancy) prevTenancyId = tenancy.id;
     const inMonth = rents.filter((r) => r.rentMonth === month);
     const rent = sumAmt(inMonth.filter((r) => r.kind === 'rent'));
     const other = sumAmt(inMonth.filter((r) => r.kind === 'other'));
@@ -848,6 +853,8 @@ export function shopLedger(data, shop, asOfMonth) {
       items: inMonth,
       collectorIds: Array.from(new Set(inMonth.map((r) => r.collectorId).filter(Boolean))),
       paidMonths: Array.from(new Set(inMonth.map((r) => r.paidMonth).filter(Boolean))).sort(),
+      // ভাড়াটিয়ার শেষ মাস — এর পরে তাঁর চূড়ান্ত হিসাবের সারি বসে
+      tenancyEnds: !!(tenancy && tenancy.toMonth === month),
       balance: running
     });
   }

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Store, Plus, Pencil, Trash2, Save, Printer, AlertTriangle, Check, X,
-  Wallet, Inbox, CalendarDays
+  Wallet, Inbox, CalendarDays, UserRoundPen
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
@@ -275,10 +275,339 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTe
 }
 
 /* --------------------------------------------------------------------------
+   ভাড়াটিয়া বদল / ছাড়া — এক জায়গা থেকে: আগের ভাড়াটিয়ার শেষ মাস ও জামানত
+   ফেরত, নতুন ভাড়াটিয়ার নাম-ভাড়া-শুরুর মাস ও জামানত গ্রহণ। সেভ করলে দোকানের
+   ভাড়াটিয়ার ইতিহাস হালনাগাদ হয় আর অ্যাডভান্সের সারিগুলো আদায়ের খাতায় বসে।
+   -------------------------------------------------------------------------- */
+function TenantChangeForm({ shop, data, monthOptions, collectors, dueUpTo, onSave, onCancel }) {
+  const tenancies = Calc.shopTenancies(shop);
+  const hasTen = tenancies.length > 0;
+  const currentMonth = U.currentMonth();
+  // বর্তমান ভাড়াটিয়া — ইতিহাস থাকলে চলমানজন, নইলে দোকানের সাধারণ ঘর থেকে
+  const cur = useMemo(() => {
+    if (hasTen) {
+      const t = Calc.shopCurrentTenancy(shop, currentMonth);
+      return t && !t.toMonth ? t : null; // "পর্যন্ত" বসানো থাকলে এখন কেউ নেই
+    }
+    if (shop.closedFrom && U.monthIndex(shop.closedFrom) <= U.monthIndex(currentMonth)) return null;
+    if (!shop.tenantName && !shop.joinMonth) return null;
+    return {
+      id: '', legacy: true,
+      tenantName: shop.tenantName || '', phone: shop.phone || '',
+      fromMonth: shop.joinMonth || Calc.shopStartMonth(shop, data.settings), toMonth: '',
+      rent: '', advanceAmount: shop.advanceAmount || '', advanceAdjust: shop.advanceAdjust || '', note: shop.advanceNote || ''
+    };
+  }, [shop, hasTen, currentMonth, data.settings]);
+  const curDeposit = useMemo(
+    () => (cur ? Calc.shopDeposit(data, shop, undefined, cur.legacy ? undefined : cur) : null),
+    [data, shop, cur]
+  );
+  const curBalance = curDeposit ? curDeposit.balance : 0;
+
+  const [leaving, setLeaving] = useState(!!cur);
+  const [toMonth, setToMonth] = useState(dueUpTo);
+  const [refundNow, setRefundNow] = useState(curBalance > 0);
+  const [refundAmount, setRefundAmount] = useState(curBalance > 0 ? String(curBalance) : '');
+  const [refundMonth, setRefundMonth] = useState(currentMonth);
+  const [refundCollector, setRefundCollector] = useState(collectors.length === 1 ? collectors[0].id : '');
+
+  const [adding, setAdding] = useState(true);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [fromMonth, setFromMonth] = useState(cur ? U.addMonths(dueUpTo, 1) : currentMonth);
+  const [rent, setRent] = useState(String(Calc.shopRentForMonth(shop, currentMonth) || ''));
+  const [agreed, setAgreed] = useState('');
+  const [received, setReceived] = useState('');
+  const [depMonth, setDepMonth] = useState(cur ? U.addMonths(dueUpTo, 1) : currentMonth);
+  const [depCollector, setDepCollector] = useState(collectors.length === 1 ? collectors[0].id : '');
+  const [monthlyAdjust, setMonthlyAdjust] = useState('');
+  const [note, setNote] = useState('');
+  const [error, setError] = useState('');
+
+  // শেষ মাস বদলালে নতুনজনের শুরু ও জামানতের মাস তার পরের মাসে
+  const changeToMonth = (m) => {
+    setToMonth(m);
+    const next = U.addMonths(m, 1);
+    setFromMonth(next);
+    setDepMonth(next);
+    setRefundMonth(U.monthIndex(next) > U.monthIndex(currentMonth) ? currentMonth : next);
+  };
+
+  const n = (v) => Number(v) || 0;
+  const inMonths = (m) => (monthOptions.includes(m) ? monthOptions : [m, ...monthOptions].sort());
+  const collectorName = (id) => { const c = collectors.find((x) => x.id === id); return c ? (c.bn || c.en) : ''; };
+
+  const submit = () => {
+    setError('');
+    if (!leaving && !adding) { setError('অন্তত একটি বেছে নিন — আগের ভাড়াটিয়া ছাড়ছেন, বা নতুন ভাড়াটিয়া আসছেন।'); return; }
+    if (leaving && cur) {
+      if (!toMonth) { setError('আগের ভাড়াটিয়ার শেষ মাস বাছুন।'); return; }
+      if (U.monthIndex(toMonth) < U.monthIndex(cur.fromMonth)) { setError('শেষ মাস শুরুর মাসের আগে হতে পারে না।'); return; }
+      if (refundNow && n(refundAmount) > 0) {
+        if (n(refundAmount) > curBalance) { setError(`জামানতে জমা আছে মাত্র ${U.bnTaka(curBalance)} — এর বেশি ফেরত লেখা যাবে না।`); return; }
+        if (!refundCollector) { setError('জামানত কে ফেরত দিলেন, বাছুন।'); return; }
+      }
+    }
+    if (adding) {
+      if (!name.trim()) { setError('নতুন ভাড়াটিয়ার নাম লিখুন।'); return; }
+      if (!fromMonth) { setError('নতুন ভাড়াটিয়া কোন মাস থেকে, বাছুন।'); return; }
+      if (leaving && cur && U.monthIndex(fromMonth) <= U.monthIndex(toMonth)) {
+        setError('নতুন ভাড়াটিয়ার শুরুর মাস আগেরজনের শেষ মাসের পরে হতে হবে।'); return;
+      }
+      if (!leaving && cur) {
+        setError(`${cur.tenantName || 'আগের ভাড়াটিয়া'} এখনো চলছেন — একসাথে দুজন থাকতে পারেন না। আগে "ছেড়ে দিচ্ছেন" টিক দিন।`); return;
+      }
+      // আগে ছেড়ে যাওয়া সবার সময়কালের পরে শুরু হতে হবে
+      const lastEnd = tenancies.reduce((m, t) => (t.toMonth && (!m || U.monthIndex(t.toMonth) > U.monthIndex(m)) ? t.toMonth : m), '');
+      if (!leaving && lastEnd && U.monthIndex(fromMonth) <= U.monthIndex(lastEnd)) {
+        setError(`আগের ভাড়াটিয়া ${U.monthLabelShort(lastEnd)} পর্যন্ত ছিলেন — নতুনজনের শুরু তার পরের মাস থেকে।`); return;
+      }
+      if (n(received) > 0 && !depCollector) { setError('জামানত কে গ্রহণ করলেন, বাছুন।'); return; }
+    }
+
+    // ---- ভাড়াটিয়ার ইতিহাস ----
+    let list = tenancies.map((t) => ({ ...t }));
+    let oldId = cur && !cur.legacy ? cur.id : '';
+    if (!hasTen && cur) {
+      // সাধারণ ঘরের তথ্য থেকে প্রথম সারি; ভাড়া খালি = দোকানের হার/ইতিহাস যেমন ছিল
+      oldId = emptyTenancy().id;
+      const first = { ...cur, id: oldId, rent: '' };
+      delete first.legacy;
+      list = [first];
+    }
+    if (leaving && cur) list = list.map((t) => (t.id === oldId ? { ...t, toMonth } : t));
+    let newId = '';
+    if (adding) {
+      newId = emptyTenancy().id;
+      list.push({
+        id: newId, tenantName: name.trim(), phone: phone.trim(), fromMonth, toMonth: '',
+        rent: n(rent) > 0 ? n(rent) : '',
+        advanceAmount: n(agreed) > 0 ? n(agreed) : (n(received) > 0 ? n(received) : ''),
+        advanceAdjust: n(monthlyAdjust) > 0 ? n(monthlyAdjust) : '',
+        note: note.trim()
+      });
+    }
+    const shopPatch = {
+      ...shop,
+      tenancies: list,
+      tenantName: adding ? name.trim() : (leaving ? '' : shop.tenantName),
+      phone: adding ? phone.trim() : (leaving ? '' : shop.phone),
+      closedFrom: ''
+    };
+
+    // ---- অ্যাডভান্সের সারি (একই মাসে একই খাতের সারি থাকলে তার সাথে যোগ) ----
+    const rents = [];
+    const existing = (m, kind) => (data.shopRents || []).find((r) => r.shopId === shop.id && r.rentMonth === m && r.kind === kind);
+    if (leaving && cur && refundNow && n(refundAmount) > 0) {
+      const ex = existing(refundMonth, 'advance-refund');
+      rents.push({
+        shopId: shop.id, rentMonth: refundMonth, paidMonth: refundMonth, kind: 'advance-refund',
+        amount: n(refundAmount) + (ex ? n(ex.amount) : 0), collectorId: refundCollector, tenancyId: oldId,
+        note: `${cur.tenantName || 'আগের ভাড়াটিয়া'}-কে দোকান ছাড়ায় জামানতের বাকি ফেরত`
+      });
+    }
+    if (adding && n(received) > 0) {
+      const ex = existing(depMonth, 'advance');
+      rents.push({
+        shopId: shop.id, rentMonth: depMonth, paidMonth: depMonth, kind: 'advance',
+        amount: n(received) + (ex ? n(ex.amount) : 0), collectorId: depCollector, tenancyId: newId,
+        note: 'নতুন ভাড়াটিয়ার জামানত'
+      });
+    }
+    onSave(shopPatch, rents);
+  };
+
+  const field = { marginBottom: '10px' };
+  const box = (on) => ({
+    padding: '10px 12px', border: '1px solid ' + (on ? '#cbd5e1' : '#e2e8f0'), borderRadius: '8px',
+    background: on ? '#fff' : '#f1f5f9', marginBottom: '12px', opacity: on ? 1 : 0.75
+  });
+
+  return (
+    <div className="card" style={{ padding: '16px', background: '#f8fafc', marginBottom: '16px' }}>
+      <div style={{ fontWeight: 700, marginBottom: '6px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <Store size={17} color="var(--primary)" />
+        {Calc.shopLabel(shop)} — ভাড়াটিয়া বদল / ছাড়া
+      </div>
+      <div className="form-hint" style={{ marginBottom: '12px' }}>
+        আগের ভাড়াটিয়ার শেষ মাসের পর তাঁর ভাড়া আর ধরা হবে না; নতুন ভাড়াটিয়ার শুরুর মাস থেকে তাঁর হারে ধার্য হবে।
+        মাঝে ফাঁক থাকলে দোকান ফাঁকা। জামানত গ্রহণ/ফেরত লিখলে তা ঐ মাসের খতিয়ানে নিজে বসবে।
+      </div>
+
+      {/* ক. আগের ভাড়াটিয়া */}
+      <div style={box(leaving && cur)}>
+        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontWeight: 600, cursor: cur ? 'pointer' : 'default' }}>
+          <input type="checkbox" checked={leaving && !!cur} disabled={!cur} onChange={(e) => setLeaving(e.target.checked)} />
+          {cur
+            ? <span>আগের ভাড়াটিয়া <b>{cur.tenantName || 'নামহীন'}</b> ({U.monthLabelShort(cur.fromMonth)} হতে) ছেড়ে দিচ্ছেন</span>
+            : 'এখন কোনো ভাড়াটিয়া নেই (দোকান ফাঁকা)'}
+        </label>
+        {leaving && cur && (
+          <div className="shop-form-grid" style={{ marginTop: '10px' }}>
+            <div className="form-group" style={field}>
+              <label className="form-label">শেষ মাস (এ মাস পর্যন্ত ভাড়া ধার্য) *</label>
+              <select className="form-input" value={toMonth} onChange={(e) => changeToMonth(e.target.value)}>
+                {inMonths(toMonth).filter((m) => U.monthIndex(m) >= U.monthIndex(cur.fromMonth)).map((m) => (
+                  <option key={m} value={m}>{U.monthLabel(m)} পর্যন্ত</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group" style={field}>
+              <label className="form-label">জামানত জমা আছে</label>
+              <div className="form-input is-auto" style={{ fontWeight: 700, color: curBalance > 0 ? 'var(--warning-dark)' : '#64748b' }}>
+                {U.bnTaka(curBalance)}
+              </div>
+              {curDeposit && (curDeposit.received > 0 || curDeposit.refunded > 0) && (
+                <div className="form-hint">
+                  গ্রহণ {U.bnTaka(curDeposit.received)} − সমন্বয় {U.bnTaka(curDeposit.adjusted)} − ফেরত {U.bnTaka(curDeposit.refunded)}
+                </div>
+              )}
+            </div>
+            {curBalance > 0 && (
+              <div className="form-group" style={{ ...field, gridColumn: '1 / -1' }}>
+                <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={refundNow} onChange={(e) => setRefundNow(e.target.checked)} />
+                  জামানতের বাকি এখনই ফেরত দেওয়া হচ্ছে (না দিলে পরে "দোকান ভাড়া এন্ট্রি ফর্ম → অ্যাডভান্স ফেরত"-এ লিখবেন)
+                </label>
+              </div>
+            )}
+            {curBalance > 0 && refundNow && (
+              <div className="form-group" style={field}>
+                <label className="form-label">ফেরত টাকা</label>
+                <input className="form-input" type="number" min="0" max={curBalance} value={refundAmount} style={{ textAlign: 'right' }}
+                  onChange={(e) => setRefundAmount(e.target.value)} />
+                <div className="form-hint">নতুন ভাড়াটিয়ার জামানত থেকে দিলেও এখানেই লিখুন — খতিয়ানে খরচ হিসেবে বসবে।</div>
+              </div>
+            )}
+            {curBalance > 0 && refundNow && (
+              <div className="form-group" style={field}>
+                <label className="form-label">কোন মাসের হিসাবে</label>
+                <select className="form-input" value={refundMonth} onChange={(e) => setRefundMonth(e.target.value)}>
+                  {inMonths(refundMonth).map((m) => <option key={m} value={m}>{U.monthLabel(m)}</option>)}
+                </select>
+              </div>
+            )}
+            {curBalance > 0 && refundNow && (
+              <div className="form-group" style={field}>
+                <label className="form-label">কে ফেরত দিলেন</label>
+                <select className="form-input" value={refundCollector} onChange={(e) => setRefundCollector(e.target.value)}>
+                  <option value="">— বাছুন —</option>
+                  {collectors.map((c) => <option key={c.id} value={c.id}>{c.bn || c.en}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* খ. নতুন ভাড়াটিয়া */}
+      <div style={box(adding)}>
+        <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontWeight: 600, cursor: 'pointer' }}>
+          <input type="checkbox" checked={adding} onChange={(e) => setAdding(e.target.checked)} />
+          নতুন ভাড়াটিয়া আসছেন
+        </label>
+        {adding && (
+          <div className="shop-form-grid" style={{ marginTop: '10px' }}>
+            <div className="form-group" style={field}>
+              <label className="form-label">ভাড়াটিয়ার নাম *</label>
+              <input className="form-input" value={name} autoFocus onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="form-group" style={field}>
+              <label className="form-label">মোবাইল</label>
+              <input className="form-input" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            </div>
+            <div className="form-group" style={field}>
+              <label className="form-label">কোন মাস থেকে *</label>
+              <select className="form-input" value={fromMonth} onChange={(e) => { setFromMonth(e.target.value); setDepMonth(e.target.value); }}>
+                {inMonths(fromMonth).map((m) => <option key={m} value={m}>{U.monthLabel(m)} হতে</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={field}>
+              <label className="form-label">মাসিক ভাড়া (টাকা)</label>
+              <input className="form-input" type="number" min="0" value={rent} style={{ textAlign: 'right' }} onChange={(e) => setRent(e.target.value)} />
+              <div className="form-hint">খালি রাখলে দোকানের সাধারণ হার।</div>
+            </div>
+            <div className="form-group" style={field}>
+              <label className="form-label">জামানত — চুক্তির অঙ্ক</label>
+              <input className="form-input" type="number" min="0" value={agreed} style={{ textAlign: 'right' }}
+                onChange={(e) => { if (!received || received === agreed) setReceived(e.target.value); setAgreed(e.target.value); }} />
+            </div>
+            <div className="form-group" style={field}>
+              <label className="form-label">জামানত নগদে গ্রহণ (টাকা)</label>
+              <input className="form-input" type="number" min="0" value={received} style={{ textAlign: 'right' }} onChange={(e) => setReceived(e.target.value)} />
+              <div className="form-hint">০ রাখলে এখন গ্রহণের সারি বসবে না; পরে এন্ট্রি ফর্ম থেকে লেখা যাবে।</div>
+            </div>
+            {n(received) > 0 && (
+              <div className="form-group" style={field}>
+                <label className="form-label">কোন মাসের হিসাবে গ্রহণ</label>
+                <select className="form-input" value={depMonth} onChange={(e) => setDepMonth(e.target.value)}>
+                  {inMonths(depMonth).map((m) => <option key={m} value={m}>{U.monthLabel(m)}</option>)}
+                </select>
+              </div>
+            )}
+            {n(received) > 0 && (
+              <div className="form-group" style={field}>
+                <label className="form-label">কে গ্রহণ করলেন *</label>
+                <select className="form-input" value={depCollector} onChange={(e) => setDepCollector(e.target.value)}>
+                  <option value="">— বাছুন —</option>
+                  {collectors.map((c) => <option key={c.id} value={c.id}>{c.bn || c.en}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="form-group" style={field}>
+              <label className="form-label">জামানত থেকে মাসে কত কাটা হবে</label>
+              <input className="form-input" type="number" min="0" value={monthlyAdjust} style={{ textAlign: 'right' }} onChange={(e) => setMonthlyAdjust(e.target.value)} />
+              <div className="form-hint">০ = কাটা হয় না, ভাড়া নগদে।</div>
+            </div>
+            <div className="form-group" style={field}>
+              <label className="form-label">শর্ত / মন্তব্য</label>
+              <input className="form-input" value={note} placeholder="যেমন: চুক্তি ০১-১১-২০২৬, ছাড়লে ফেরত" onChange={(e) => setNote(e.target.value)} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* সারাংশ — সেভ করলে কী হবে */}
+      <div style={{ fontSize: '12.5px', color: '#334155', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '8px 12px', marginBottom: '12px' }}>
+        <b>সেভ করলে:</b>
+        <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
+          {leaving && cur && <li>{cur.tenantName || 'আগের ভাড়াটিয়া'} — {U.monthLabelShort(toMonth)} পর্যন্ত; এরপর তাঁর ভাড়া ধরা হবে না।</li>}
+          {leaving && cur && refundNow && n(refundAmount) > 0 && (
+            <li>{U.monthLabel(refundMonth)} মাসের খতিয়ানে জামানত ফেরত {U.bnTaka(n(refundAmount))} (খরচ){refundCollector ? `, ${collectorName(refundCollector)}` : ''}।</li>
+          )}
+          {leaving && cur && curBalance > 0 && !(refundNow && n(refundAmount) > 0) && (
+            <li style={{ color: '#b91c1c' }}>জামানতের {U.bnTaka(curBalance)} ফেরত বাকি থাকবে — পরে এন্ট্রি ফর্মে লিখবেন।</li>
+          )}
+          {adding && (
+            <li>{name.trim() || 'নতুন ভাড়াটিয়া'} — {U.monthLabelShort(fromMonth)} হতে{n(rent) > 0 ? `, মাসিক ভাড়া ${U.bnTaka(n(rent))}` : ''}{n(agreed) > 0 ? `, জামানত চুক্তি ${U.bnTaka(n(agreed))}` : ''}।</li>
+          )}
+          {adding && n(received) > 0 && (
+            <li>{U.monthLabel(depMonth)} মাসের খতিয়ানে জামানত গ্রহণ {U.bnTaka(n(received))} (আয়){depCollector ? `, ${collectorName(depCollector)}` : ''}।</li>
+          )}
+          {leaving && cur && !adding && <li>{U.monthLabelShort(U.addMonths(toMonth, 1))} হতে দোকান ফাঁকা — বকেয়া ধরা হবে না।</li>}
+          {!leaving && !adding && <li>কিছুই বদলাবে না।</li>}
+        </ul>
+      </div>
+
+      {error && <div className="form-error" style={{ marginBottom: '10px' }}>{error}</div>}
+
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+        <button type="button" className="btn btn-outline btn-sm" onClick={onCancel}>
+          <X size={14} /> বাতিল
+        </button>
+        <button type="button" className="btn btn-primary btn-sm" onClick={submit}>
+          <Check size={14} /> সেভ করুন
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
    পাতা
    -------------------------------------------------------------------------- */
 export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
-  const { data, selectedMonth, saveShop, deleteShop, saveShopRents } = useData();
+  const { data, selectedMonth, saveShop, deleteShop, saveShopRents, addToast } = useData();
   const { isReadOnly } = useAuth();
 
   const shopsReady = data.shopsReady !== false;
@@ -290,6 +619,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
 
   const [selectedShopId, setSelectedShopId] = useState(shops[0]?.id || '');
   const [shopDraft, setShopDraft] = useState(null);
+  const [tenantChange, setTenantChange] = useState(false);
   const [localRows, setLocalRows] = useState({});
 
   useEffect(() => {
@@ -297,7 +627,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
   }, [shops, selectedShopId]);
 
   // দোকান বদলালে অসংরক্ষিত ঘরগুলো বাদ
-  useEffect(() => { setLocalRows({}); }, [selectedShopId]);
+  useEffect(() => { setLocalRows({}); setTenantChange(false); }, [selectedShopId]);
 
   const shop = shops.find((s) => s.id === selectedShopId) || null;
 
@@ -442,6 +772,14 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
     if (saved) setSelectedShopId(saved.id);
     setShopDraft(null);
   };
+  // ভাড়াটিয়া বদল — দোকানের ইতিহাস ও অ্যাডভান্সের সারি একসাথে
+  const submitTenantChange = (shopPatch, rents) => {
+    const saved = saveShop(shopPatch);
+    if (!saved) return;
+    if (rents.length) saveShopRents(rents);
+    addToast(`${Calc.shopLabel(saved)} — ভাড়াটিয়ার তথ্য হালনাগাদ হয়েছে।`, 'success');
+    setTenantChange(false);
+  };
   const removeShop = () => {
     if (!shop) return;
     const n = Calc.shopRentsOf(data, shop.id).length;
@@ -503,6 +841,19 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
             </div>
           </div>
         </div>
+      )}
+
+      {tenantChange && shop && !shopDraft && (
+        <TenantChangeForm
+          key={shop.id}
+          shop={shop}
+          data={data}
+          monthOptions={paidMonthOptions}
+          collectors={collectors}
+          dueUpTo={dueUpTo}
+          onSave={submitTenantChange}
+          onCancel={() => setTenantChange(false)}
+        />
       )}
 
       {shopDraft && (
@@ -662,8 +1013,12 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
               </div>
               {!isReadOnly && (
                 <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                  <button className="btn btn-outline btn-sm" onClick={startEditShop}>
+                  <button className="btn btn-outline btn-sm" onClick={() => { setTenantChange(false); startEditShop(); }}>
                     <Pencil size={13} /> তথ্য বদলান
+                  </button>
+                  <button className="btn btn-outline btn-sm" onClick={() => { setShopDraft(null); setTenantChange(true); }}
+                    title="আগের ভাড়াটিয়া ছাড়ছেন / নতুন ভাড়াটিয়া আসছেন — জামানতসহ">
+                    <UserRoundPen size={13} /> ভাড়াটিয়া বদল
                   </button>
                   <button className="btn btn-outline btn-sm" style={{ color: '#dc2626' }} onClick={removeShop}>
                     <Trash2 size={13} /> মুছুন
@@ -858,8 +1213,8 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
                       </td>
                       <td className="amount">
                         {(() => {
-                          const last = ledgerRows[ledgerRows.length - 1];
-                          const b = last ? last.balance : 0;
+                          // পুরো দোকানের বকেয়া — সারির balance ভাড়াটিয়া বদলালে শূন্য থেকে শুরু হয়
+                          const b = ledgerRows.reduce((s, r) => s + r.charge - r.rent - r.other - r.adjust, 0);
                           return b > 0
                             ? <span style={{ color: 'var(--danger)' }}>{U.bnNumber(b)}</span>
                             : b < 0 ? <span style={{ color: 'var(--success)' }}>অগ্রীম {U.bnNumber(-b)}</span> : '০';

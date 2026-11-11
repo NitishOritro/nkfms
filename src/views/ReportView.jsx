@@ -445,6 +445,13 @@ export function ReportView({
     ? Calc.shopTenancyStatement(data, shopLedgerShop, shopLedgerTenancy, selectedMonth)
     : null;
   const shopLedgerRows = shopLedgerStmt ? shopLedgerStmt.rows : [];
+  // পুরো দোকানের বিবরণীতে হেডারে কার নাম — নির্বাচিত মাসের ভাড়াটিয়া, নইলে সর্বশেষজন
+  const shopLedgerHeadTenancy = shopLedgerShop && shopLedgerTenantCol
+    ? (Calc.shopTenancyFor(shopLedgerShop, selectedMonth) || Calc.shopCurrentTenancy(shopLedgerShop, selectedMonth))
+    : null;
+  // ভাড়াটিয়াওয়ারি চূড়ান্ত হিসাব — পুরো দোকানের ছকে প্রত্যেকের শেষ সারির নিচে
+  const shopLedgerSettleFor = (tenancy) =>
+    tenancy && shopLedgerShop ? Calc.shopTenancyStatement(data, shopLedgerShop, tenancy, selectedMonth) : null;
   const shopLedgerStatus = shopLedgerStmt ? shopLedgerStmt.status : null;
   const shopLedgerDeposit = shopLedgerStmt ? shopLedgerStmt.deposit : null;
   const shopLedgerFrom = shopLedgerStmt ? shopLedgerStmt.fromMonth : selectedMonth;
@@ -1868,7 +1875,7 @@ export function ReportView({
             {headBlock}
             <div style={{ marginBottom: '8px', fontSize: '11px', color: '#1e293b' }}>
               দোকান: <b className="flat-no">{Calc.shopLabel(shopLedgerShop)}</b> &nbsp;|&nbsp;
-              ভাড়াটিয়া: <b className="owner-name">
+              {shopLedgerTenancy || !shopLedgerHeadTenancy ? 'ভাড়াটিয়া' : (shopLedgerHeadTenancy.toMonth ? 'শেষ ভাড়াটিয়া' : 'বর্তমান ভাড়াটিয়া')}: <b className="owner-name">
                 {shopLedgerTenancy
                   ? (shopLedgerTenancy.tenantName || 'নামহীন')
                   : (Calc.shopTenantName(shopLedgerShop, selectedMonth) || Calc.shopTenantName(shopLedgerShop) || '—')}
@@ -1878,6 +1885,10 @@ export function ReportView({
               {shopLedgerTenancy ? (
                 <>সময়কাল: <b>{U.monthLabelShort(shopLedgerFrom)} হতে {shopLedgerTenancy.toMonth ? U.monthLabelShort(shopLedgerTenancy.toMonth) : 'চলছে'}</b>
                   {' '}({U.bnDigits(shopLedgerRows.length)} মাস)</>
+              ) : shopLedgerHeadTenancy ? (
+                <>ভাড়া শুরু: <b>{U.monthLabelShort(shopLedgerHeadTenancy.fromMonth)}</b>
+                  {shopLedgerHeadTenancy.toMonth ? <> ({U.monthLabelShort(shopLedgerHeadTenancy.toMonth)} পর্যন্ত)</> : ''}
+                  {' '}&nbsp;|&nbsp; দোকানে ভাড়া শুরু: <b>{U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))}</b></>
               ) : (
                 <>ভাড়া শুরু: <b>{U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))}</b></>
               )}
@@ -1999,13 +2010,68 @@ export function ReportView({
                         : lr.balance < 0 ? `অগ্রীম ${U.bnNumber(-lr.balance)}` : U.bnNumber(0)}
                     </td>
                   </tr>
+                  {/* ভাড়াটিয়ার শেষ সারির নিচে তাঁর চূড়ান্ত হিসাব — ছেড়ে গেলে "চূড়ান্ত",
+                      চলমান হলে "এ পর্যন্ত"; পরের ভাড়াটিয়ার বকেয়া শূন্য থেকে শুরু */}
+                  {(() => {
+                    if (!shopLedgerTenantCol || shopLedgerTenancy || !lr.tenancy) return null;
+                    const next = shopLedgerRows[i + 1];
+                    const isLast = !next || !next.tenancy || next.tenancy.id !== lr.tenancy.id;
+                    if (!isLast) return null;
+                    const st = shopLedgerSettleFor(lr.tenancy);
+                    if (!st) return null;
+                    const ended = !!lr.tenancy.toMonth && U.monthIndex(lr.tenancy.toMonth) <= U.monthIndex(selectedMonth);
+                    const dep = st.deposit;
+                    const net = st.netRefund;
+                    return (
+                      <tr className="tenant-settle-row">
+                        <td colSpan={2} style={{ textAlign: 'left' }}>
+                          <b>{lr.tenancy.tenantName || 'নামহীন'} — {ended ? 'চূড়ান্ত হিসাব' : 'এ পর্যন্ত হিসাব'}</b>
+                          <div style={{ fontSize: '8.5px', fontWeight: 400 }}>
+                            {U.monthLabelShort(st.fromMonth)} হতে {U.monthLabelShort(st.toMonth)} ({U.bnDigits(st.rows.length)} মাস){ended ? ' — ছেড়ে গেছেন' : ''}
+                          </div>
+                        </td>
+                        <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(st.status.charged)}</td>
+                        <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(st.status.paidRent + st.status.paidOther)}</td>
+                        <td style={{ textAlign: 'right' }}>{st.status.paidAdjust ? U.bnNumber(st.status.paidAdjust) : ''}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          {st.status.electricity ? U.bnNumber(st.status.electricity) : ''}
+                          {st.status.electricityAdjust > 0 && (
+                            <div style={{ fontSize: '8px', fontWeight: 400, lineHeight: 1.1 }}>অ্যাড. {U.bnNumber(st.status.electricityAdjust)}</div>
+                          )}
+                        </td>
+                        <td colSpan={2} style={{ textAlign: 'left', fontSize: '8.5px', fontWeight: 400, lineHeight: 1.25 }}>
+                          {(dep.received || dep.adjusted || dep.refunded) ? (
+                            <>
+                              জামানত: গ্রহণ {U.bnNumber(dep.received)} − সমন্বয় {U.bnNumber(dep.adjusted)}
+                              {dep.refunded > 0 && <> − ফেরত {U.bnNumber(dep.refunded)}</>} = <b>{U.bnNumber(dep.balance)}</b>
+                              <br />
+                            </>
+                          ) : null}
+                          {ended
+                            ? (net > 0
+                              ? <>নিট ফেরতযোগ্য <b>{U.bnNumber(net)}</b></>
+                              : net < 0
+                                ? <>ভাড়াটিয়ার কাছে পাওনা <b className="due-amount">{U.bnNumber(-net)}</b></>
+                                : <b>হিসাব চুকেছে — পাওনা/দেনা নেই</b>)
+                            : (dep.balance > 0 ? <>জামানতে জমা <b>{U.bnNumber(dep.balance)}</b></> : null)}
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                          {st.status.due > 0
+                            ? <span className="due-amount">{U.bnNumber(st.status.due)}</span>
+                            : st.status.advance > 0 ? `অগ্রীম ${U.bnNumber(st.status.advance)}` : U.bnNumber(0)}
+                        </td>
+                      </tr>
+                    );
+                  })()}
                   </React.Fragment>
                   );
                 })}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={shopLedgerTenantCol ? 2 : 1} style={{ textAlign: 'right' }}>সর্বমোট</td>
+                  <td colSpan={shopLedgerTenantCol ? 2 : 1} style={{ textAlign: 'right' }}>
+                    সর্বমোট{shopLedgerTenantCol && !shopLedgerTenancy ? ' (পুরো দোকান, সব ভাড়াটিয়া)' : ''}
+                  </td>
                   <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerStatus.charged)}</td>
                   <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerStatus.paidRent + shopLedgerStatus.paidOther)}</td>
                   <td style={{ textAlign: 'right' }}>{shopLedgerStatus.paidAdjust ? U.bnNumber(shopLedgerStatus.paidAdjust) : ''}</td>
@@ -2056,7 +2122,9 @@ export function ReportView({
                 অ্যাডভান্স থেকে সমন্বয়; বিদ্যুৎ বিল আলাদা, "অ্যাড." লেখা অংশ অ্যাডভান্স (জামানত) থেকে কাটা (নগদ নয়)।
                 {shopLedgerTenancy
                   ? ' এই বিবরণী কেবল উল্লিখিত ভাড়াটিয়ার সময়কালের।'
-                  : ' "ফাঁকা" মাসে দোকানে ভাড়াটিয়া ছিল না, ভাড়া ধার্য হয়নি।'}
+                  : shopLedgerTenantCol
+                    ? ' ভাড়াটিয়া বদলালে বকেয়া নতুনজনের জন্য শূন্য থেকে শুরু; আগেরজনের পুরো হিসাব তাঁর শেষ মাসের নিচে "চূড়ান্ত হিসাব" সারিতে। "ফাঁকা" মাসে দোকানে ভাড়াটিয়া ছিল না, ভাড়া ধার্য হয়নি।'
+                    : ' "ফাঁকা" মাসে দোকানে ভাড়াটিয়া ছিল না, ভাড়া ধার্য হয়নি।'}
                 {' '}অ্যাডভান্স (জামানত) খাতা ও স্বাক্ষর পরের পাতায়।
               </span>
             </div>

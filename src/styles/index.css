@@ -3695,3 +3695,5 @@ table.tbl-shop-ledger th, table.tbl-shop-ledger td { font-size: 11px; padding: 3
 table.tbl-shop-ledger tr.vacant-row > td { background: #f8fafc; color: #64748b; }
 /* দোকানভিত্তিক খতিয়ানে ভাড়াটিয়া বদলের চিহ্ন-সারি */
 table.tbl-shop-ledger tr.tenant-change-row > td { background: #fef3c7; color: #78350f; font-weight: 700; font-size: 10.5px; text-align: left; padding: 3px 8px; }
+/* ভাড়াটিয়ার চূড়ান্ত হিসাবের সারি — তাঁর শেষ মাসের নিচে */
+table.tbl-shop-ledger tr.tenant-settle-row > td { background: #e2e8f0; color: #0f172a; font-weight: 700; font-size: 10px; padding: 3px 6px; border-top: 2px solid #475569; border-bottom: 2px solid #475569; }
