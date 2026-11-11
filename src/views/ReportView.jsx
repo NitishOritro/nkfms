@@ -452,6 +452,21 @@ export function ReportView({
   // ভাড়াটিয়াওয়ারি চূড়ান্ত হিসাব — পুরো দোকানের ছকে প্রত্যেকের শেষ সারির নিচে
   const shopLedgerSettleFor = (tenancy) =>
     tenancy && shopLedgerShop ? Calc.shopTenancyStatement(data, shopLedgerShop, tenancy, selectedMonth) : null;
+  // পুরো দোকানের ছকের নিচের "মোট" ও বক্সগুলো — বর্তমান (বা সর্বশেষ) ভাড়াটিয়ার
+  // হিসাব; আগেরজনদের হিসাব চুকে গেছে, তাঁদের অঙ্ক তাঁদের চূড়ান্ত হিসাবের সারিতে
+  const shopLedgerFootStmt = shopLedgerTenantCol && !shopLedgerTenancy && shopLedgerHeadTenancy
+    ? shopLedgerSettleFor(shopLedgerHeadTenancy) : null;
+  const shopLedgerFootStatus = shopLedgerFootStmt ? shopLedgerFootStmt.status : shopLedgerStatus;
+  const shopLedgerFootFrom = shopLedgerFootStmt ? shopLedgerFootStmt.fromMonth : shopLedgerFrom;
+  const shopLedgerFootToShort = shopLedgerFootStmt ? U.monthLabelShort(shopLedgerFootStmt.toMonth) : shopLedgerToShort;
+  const shopLedgerFootName = shopLedgerFootStmt ? (shopLedgerHeadTenancy.tenantName || 'নামহীন') : '';
+  // আগে ছেড়ে যাওয়া ভাড়াটিয়াদের কারো কাছে পাওনা থেকে গেলে
+  const shopLedgerPastDue = shopLedgerFootStmt
+    ? shopLedgerTenancies
+      .filter((t) => t.id !== shopLedgerHeadTenancy.id && t.toMonth && U.monthIndex(t.toMonth) <= U.monthIndex(selectedMonth))
+      .map((t) => ({ tenancy: t, net: shopLedgerSettleFor(t).netRefund }))
+      .filter((x) => x.net < 0)
+    : [];
   const shopLedgerStatus = shopLedgerStmt ? shopLedgerStmt.status : null;
   const shopLedgerDeposit = shopLedgerStmt ? shopLedgerStmt.deposit : null;
   const shopLedgerFrom = shopLedgerStmt ? shopLedgerStmt.fromMonth : selectedMonth;
@@ -2020,6 +2035,7 @@ export function ReportView({
                     const st = shopLedgerSettleFor(lr.tenancy);
                     if (!st) return null;
                     const ended = !!lr.tenancy.toMonth && U.monthIndex(lr.tenancy.toMonth) <= U.monthIndex(selectedMonth);
+                    if (!ended) return null;
                     const dep = st.deposit;
                     const net = st.netRefund;
                     return (
@@ -2042,7 +2058,7 @@ export function ReportView({
                         <td colSpan={2} style={{ textAlign: 'left', fontSize: '8.5px', fontWeight: 400, lineHeight: 1.25 }}>
                           {(dep.received || dep.adjusted || dep.refunded) ? (
                             <>
-                              জামানত: গ্রহণ {U.bnNumber(dep.received)} − সমন্বয় {U.bnNumber(dep.adjusted)}
+                              জামানত {U.bnNumber(dep.received)} − সমন্বয় {U.bnNumber(dep.adjusted)}
                               {dep.refunded > 0 && <> − ফেরত {U.bnNumber(dep.refunded)}</>} = <b>{U.bnNumber(dep.balance)}</b>
                               <br />
                             </>
@@ -2070,50 +2086,74 @@ export function ReportView({
               <tfoot>
                 <tr>
                   <td colSpan={shopLedgerTenantCol ? 2 : 1} style={{ textAlign: 'right' }}>
-                    সর্বমোট{shopLedgerTenantCol && !shopLedgerTenancy ? ' (পুরো দোকান, সব ভাড়াটিয়া)' : ''}
+                    সর্বমোট{shopLedgerFootStmt ? ` — ${shopLedgerFootName} (${U.monthLabelShort(shopLedgerFootFrom)} হতে ${shopLedgerFootToShort})` : ''}
                   </td>
-                  <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerStatus.charged)}</td>
-                  <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerStatus.paidRent + shopLedgerStatus.paidOther)}</td>
-                  <td style={{ textAlign: 'right' }}>{shopLedgerStatus.paidAdjust ? U.bnNumber(shopLedgerStatus.paidAdjust) : ''}</td>
+                  <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerFootStatus.charged)}</td>
+                  <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerFootStatus.paidRent + shopLedgerFootStatus.paidOther)}</td>
+                  <td style={{ textAlign: 'right' }}>{shopLedgerFootStatus.paidAdjust ? U.bnNumber(shopLedgerFootStatus.paidAdjust) : ''}</td>
                   <td style={{ textAlign: 'right' }}>
-                    {shopLedgerStatus.electricity ? U.bnNumber(shopLedgerStatus.electricity) : ''}
-                    {shopLedgerStatus.electricityAdjust > 0 && (
-                      <div style={{ fontSize: '8px', fontWeight: 400, lineHeight: 1.1 }}>অ্যাড. {U.bnNumber(shopLedgerStatus.electricityAdjust)}</div>
+                    {shopLedgerFootStatus.electricity ? U.bnNumber(shopLedgerFootStatus.electricity) : ''}
+                    {shopLedgerFootStatus.electricityAdjust > 0 && (
+                      <div style={{ fontSize: '8px', fontWeight: 400, lineHeight: 1.1 }}>অ্যাড. {U.bnNumber(shopLedgerFootStatus.electricityAdjust)}</div>
                     )}
                   </td>
-                  <td colSpan={2}></td>
+                  <td colSpan={2} style={{ textAlign: 'left', fontSize: '8.5px', fontWeight: 400, lineHeight: 1.25 }}>
+                    {shopLedgerFootStmt && (shopLedgerFootStmt.deposit.received > 0 || shopLedgerFootStmt.deposit.adjusted > 0) && (
+                      <>জামানত {U.bnNumber(shopLedgerFootStmt.deposit.received)} − সমন্বয় {U.bnNumber(shopLedgerFootStmt.deposit.adjusted)}
+                        {shopLedgerFootStmt.deposit.refunded > 0 && <> − ফেরত {U.bnNumber(shopLedgerFootStmt.deposit.refunded)}</>}
+                        {' '}= জমা <b>{U.bnNumber(shopLedgerFootStmt.deposit.balance)}</b></>
+                    )}
+                  </td>
                   <td style={{ textAlign: 'right' }}>
-                    {shopLedgerStatus.due > 0
-                      ? <span className="due-amount">{U.bnNumber(shopLedgerStatus.due)}</span>
-                      : shopLedgerStatus.advance > 0 ? `অগ্রীম ${U.bnNumber(shopLedgerStatus.advance)}` : U.bnNumber(0)}
+                    {shopLedgerFootStatus.due > 0
+                      ? <span className="due-amount">{U.bnNumber(shopLedgerFootStatus.due)}</span>
+                      : shopLedgerFootStatus.advance > 0 ? `অগ্রীম ${U.bnNumber(shopLedgerFootStatus.advance)}` : U.bnNumber(0)}
                   </td>
                 </tr>
               </tfoot>
             </table>
 
-            <div className="print-totals" style={{ marginTop: '12px' }}>
+            {shopLedgerFootStmt && (
+              <div style={{ marginTop: '10px', fontSize: '10.5px', fontWeight: 700, color: '#1e293b' }}>
+                বর্তমান ভাড়াটিয়া {shopLedgerFootName} — {U.monthLabelShort(shopLedgerFootFrom)} হতে {shopLedgerFootToShort} ({U.bnDigits(shopLedgerFootStmt.rows.length)} মাস)
+              </div>
+            )}
+            <div className="print-totals" style={{ marginTop: shopLedgerFootStmt ? '4px' : '12px' }}>
               <div className="box">
-                মোট ধার্য ({U.monthLabelShort(shopLedgerFrom)} হতে {shopLedgerToShort}):{' '}
-                <b>{U.bnNumber(shopLedgerStatus.charged)}/-</b>
+                মোট ধার্য ({U.monthLabelShort(shopLedgerFootFrom)} হতে {shopLedgerFootToShort}):{' '}
+                <b>{U.bnNumber(shopLedgerFootStatus.charged)}/-</b>
               </div>
               <div className="box">
-                মোট পরিশোধিত (নগদ {U.bnNumber(shopLedgerStatus.paidRent + shopLedgerStatus.paidOther)} + অ্যাডভান্স সমন্বয় {U.bnNumber(shopLedgerStatus.paidAdjust)}):{' '}
-                <b className="amt-paid">{U.bnNumber(shopLedgerStatus.paid)}/-</b>
+                মোট পরিশোধিত (নগদ {U.bnNumber(shopLedgerFootStatus.paidRent + shopLedgerFootStatus.paidOther)} + অ্যাডভান্স সমন্বয় {U.bnNumber(shopLedgerFootStatus.paidAdjust)}):{' '}
+                <b className="amt-paid">{U.bnNumber(shopLedgerFootStatus.paid)}/-</b>
                 <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>
-                  বিদ্যুৎ বিল আলাদা {U.bnNumber(shopLedgerStatus.electricity)}/-
-                  {shopLedgerStatus.electricityAdjust > 0 && (
-                    <> (নগদ {U.bnNumber(shopLedgerStatus.electricityCash)} + অ্যাডভান্স থেকে {U.bnNumber(shopLedgerStatus.electricityAdjust)})</>
+                  বিদ্যুৎ বিল আলাদা {U.bnNumber(shopLedgerFootStatus.electricity)}/-
+                  {shopLedgerFootStatus.electricityAdjust > 0 && (
+                    <> (নগদ {U.bnNumber(shopLedgerFootStatus.electricityCash)} + অ্যাডভান্স থেকে {U.bnNumber(shopLedgerFootStatus.electricityAdjust)})</>
                   )}
                 </div>
               </div>
               <div className="box" style={{ border: '2px solid #000' }}>
-                বকেয়া পাওনা ({shopLedgerToShort} পর্যন্ত):{' '}
-                <b className="amt-due">{U.bnNumber(shopLedgerStatus.due)}/-</b>
-                {shopLedgerStatus.advance > 0 && (
-                  <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>অগ্রীম জমা {U.bnNumber(shopLedgerStatus.advance)}/-</div>
+                বকেয়া পাওনা ({shopLedgerFootToShort} পর্যন্ত):{' '}
+                <b className="amt-due">{U.bnNumber(shopLedgerFootStatus.due)}/-</b>
+                {shopLedgerFootStatus.advance > 0 && (
+                  <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>অগ্রীম জমা {U.bnNumber(shopLedgerFootStatus.advance)}/-</div>
+                )}
+                {shopLedgerFootStmt && shopLedgerFootStmt.deposit.balance > 0 && (
+                  <div style={{ fontSize: '10px', fontWeight: 400, marginTop: '2px' }}>জামানত জমা {U.bnNumber(shopLedgerFootStmt.deposit.balance)}/- (আলাদা, ছাড়লে ফেরত)</div>
                 )}
               </div>
             </div>
+            {shopLedgerFootStmt && (
+              <div style={{ marginTop: '4px', fontSize: '9.5px', color: '#475569' }}>
+                পুরো দোকান মিলিয়ে ({U.monthLabelShort(shopLedgerFrom)} হতে {shopLedgerToShort}, সব ভাড়াটিয়া): ধার্য {U.bnNumber(shopLedgerStatus.charged)},
+                নগদ {U.bnNumber(shopLedgerStatus.paidRent + shopLedgerStatus.paidOther)}, অ্যাডভান্স সমন্বয় {U.bnNumber(shopLedgerStatus.paidAdjust)},
+                বিদ্যুৎ {U.bnNumber(shopLedgerStatus.electricity)}; আগের ভাড়াটিয়াদের হিসাব উপরে তাঁদের "চূড়ান্ত হিসাব" সারিতে
+                {shopLedgerPastDue.length > 0
+                  ? <> — <span className="amt-due">পাওনা বাকি: {shopLedgerPastDue.map((x) => `${x.tenancy.tenantName || 'নামহীন'} ${U.bnNumber(-x.net)}`).join(', ')}</span></>
+                  : ' (সব চুকে গেছে)'}।
+              </div>
+            )}
 
             <div className="print-note print-note-sm" style={{ marginTop: '8px' }}>
               <span className="print-note-tag">বি.দ্র.</span>
@@ -2123,7 +2163,7 @@ export function ReportView({
                 {shopLedgerTenancy
                   ? ' এই বিবরণী কেবল উল্লিখিত ভাড়াটিয়ার সময়কালের।'
                   : shopLedgerTenantCol
-                    ? ' ভাড়াটিয়া বদলালে বকেয়া নতুনজনের জন্য শূন্য থেকে শুরু; আগেরজনের পুরো হিসাব তাঁর শেষ মাসের নিচে "চূড়ান্ত হিসাব" সারিতে। "ফাঁকা" মাসে দোকানে ভাড়াটিয়া ছিল না, ভাড়া ধার্য হয়নি।'
+                    ? ' ভাড়াটিয়া বদলালে বকেয়া নতুনজনের জন্য শূন্য থেকে শুরু; আগেরজনের পুরো হিসাব তাঁর শেষ মাসের নিচে "চূড়ান্ত হিসাব" সারিতে, নিচের সর্বমোট ও বক্স বর্তমান ভাড়াটিয়ার। "ফাঁকা" মাসে দোকানে ভাড়াটিয়া ছিল না, ভাড়া ধার্য হয়নি।'
                     : ' "ফাঁকা" মাসে দোকানে ভাড়াটিয়া ছিল না, ভাড়া ধার্য হয়নি।'}
                 {' '}অ্যাডভান্স (জামানত) খাতা ও স্বাক্ষর পরের পাতায়।
               </span>
