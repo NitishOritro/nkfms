@@ -50,6 +50,7 @@ const PAGE_TITLES = {
   'flat-entry': 'একক ফ্ল্যাট এন্ট্রি (বিগত ২৫ মাস)',
   'shop-rent-form': 'দোকান ভাড়া এন্ট্রি ফর্ম',
   'shop-rent': 'দোকানওয়ারি ভাড়ার হিসাব ও দোকান ব্যবস্থাপনা',
+  'shop-rent-entry': 'দোকান ভাড়া — মাসভিত্তিক এন্ট্রি',
   'shop-rent-monthly': 'মাসভিত্তিক দোকান ভাড়া আদায়',
   summary: 'মাসিক হিসাবায়ন সারসংক্ষেপ',
   ledger: 'আয়-ব্যয় হিসাব',
@@ -77,6 +78,7 @@ const ADMIN_ONLY_TABS = [
   'flat-entry',
   'shop-rent-form',
   'shop-rent',
+  'shop-rent-entry',
   'ledger',
   'flats',
   'collectors',
@@ -196,6 +198,17 @@ export function App() {
               setReportState({ type: 'shop-rent', selectiveIds: null });
               setCurrentTab('reports');
             }}
+            onOpenShopLedger={(shopId) => {
+              setReportState({ type: 'shop-ledger', selectiveIds: null, shopId });
+              setCurrentTab('reports');
+            }}
+            onOpenMonthlyEntry={() => setCurrentTab('shop-rent-entry')}
+          />
+        )}
+        {/* মাসভিত্তিক ভাড়ার এন্ট্রির ছক — একই ভিউ, কেবল এন্ট্রির অংশ */}
+        {currentTab === 'shop-rent-entry' && !isReadOnly && (
+          <ShopRentView
+            mode="entry"
             onOpenShopLedger={(shopId) => {
               setReportState({ type: 'shop-ledger', selectiveIds: null, shopId });
               setCurrentTab('reports');

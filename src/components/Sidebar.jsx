@@ -10,6 +10,7 @@ import {
   Settings,
   Printer,
   ClipboardList,
+  CalendarDays,
   LogOut, Wallet, Store } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -29,7 +30,9 @@ const NAV_GROUPS = [
       { id: 'charge-form', label: 'সার্ভিস চার্জ এন্ট্রি ফর্ম', icon: ClipboardList, adminOnly: true },
       // দোকান ভাড়ার এন্ট্রি — কেবল অ্যাডমিন; মাসভিত্তিক তালিকা নিচের দলে সবার জন্য
       { id: 'shop-rent-form', label: 'দোকান ভাড়া এন্ট্রি ফর্ম', icon: Store, adminOnly: true },
-      { id: 'shop-rent', label: 'দোকানওয়ারি ভাড়ার হিসাব', icon: Store, adminOnly: true }
+      { id: 'shop-rent', label: 'দোকানওয়ারি ভাড়ার হিসাব', icon: Store, adminOnly: true },
+      // মাসওয়ারি ভাড়ার এন্ট্রির ছক — আলাদা পাতা, যাতে হিসাবের পাতা হালকা থাকে
+      { id: 'shop-rent-entry', label: 'দোকান ভাড়া মাসভিত্তিক এন্ট্রি', icon: CalendarDays, adminOnly: true }
     ]
   },
   {

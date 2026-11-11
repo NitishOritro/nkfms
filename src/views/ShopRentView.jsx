@@ -689,7 +689,15 @@ function TenantChangeForm({ shop, data, monthOptions, collectors, dueUpTo, onSav
 /* --------------------------------------------------------------------------
    পাতা
    -------------------------------------------------------------------------- */
-export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
+// দুই পাতার মাঝে একই দোকান বাছাই থাকে (মেনু বদলালেও)
+let lastSelectedShopId = '';
+
+/**
+ * mode = 'manage' — দোকানের তথ্য, সারসংক্ষেপ, ভাড়াটিয়া বদল (ডিফল্ট)
+ * mode = 'entry'  — কেবল মাসভিত্তিক ভাড়ার এন্ট্রির ছক (আলাদা মেনু)
+ */
+export function ShopRentView({ onOpenPrint, onOpenShopLedger, onOpenMonthlyEntry, mode = 'manage' }) {
+  const isEntry = mode === 'entry';
   const { data, selectedMonth, saveShop, deleteShop, saveShopRents, addToast } = useData();
   const { isReadOnly } = useAuth();
 
@@ -700,7 +708,10 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
   // বকেয়ার হিসাব গত মাস পর্যন্ত — চলতি মাসের ভাড়া এখনো পাওনা হয়নি
   const dueUpTo = U.addMonths(currentMonth, -1);
 
-  const [selectedShopId, setSelectedShopId] = useState(shops[0]?.id || '');
+  const [selectedShopId, setSelectedShopIdState] = useState(
+    () => (shops.find((s2) => s2.id === lastSelectedShopId) || shops[0] || {}).id || ''
+  );
+  const setSelectedShopId = (id) => { lastSelectedShopId = id; setSelectedShopIdState(id); };
   const [shopDraft, setShopDraft] = useState(null);
   const [tenantChange, setTenantChange] = useState(false);
   const [localRows, setLocalRows] = useState({});
@@ -889,18 +900,24 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
         <div className="card-header">
           <div>
             <div className="card-title">
-              <Store size={18} color="var(--primary)" />
-              <span>{U.monthLabel(selectedMonth)} — দোকান ভাড়া আদায় ও হিসাব</span>
+              {isEntry ? <CalendarDays size={18} color="var(--primary)" /> : <Store size={18} color="var(--primary)" />}
+              <span>{isEntry ? 'দোকান ভাড়া — মাসভিত্তিক এন্ট্রি' : `${U.monthLabel(selectedMonth)} — দোকান ভাড়া আদায় ও হিসাব`}</span>
             </div>
             <div className="card-sub">
-              কোন দোকান থেকে কোন মাসের ভাড়া কত উঠল, এখানে লিখুন। জমার মাস ধরে
-              আয়-ব্যয় খতিয়ানে "দোকানের ভাড়া আদায়" সারিটি নিজে থেকেই বসবে।
+              {isEntry
+                ? 'দোকান বেছে নিচের ছকে প্রতিটি মাসের ভাড়া, বিদ্যুৎ বিল বা অ্যাডভান্স থেকে সমন্বয় লিখে সেভ করুন। জমার মাস ধরে আয়-ব্যয় খতিয়ানে "দোকানের ভাড়া আদায়" সারিটি নিজে থেকেই বসবে।'
+                : 'দোকানের তথ্য, ভাড়াটিয়া, জামানত ও বকেয়ার সারসংক্ষেপ। মাসওয়ারি ভাড়া লিখতে "মাসভিত্তিক এন্ট্রি" পাতায় যান।'}
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {!isReadOnly && shopsReady && (
+            {!isReadOnly && shopsReady && !isEntry && (
               <button className="btn btn-outline btn-sm" onClick={startNewShop}>
                 <Plus size={15} /> নতুন দোকান
+              </button>
+            )}
+            {!isEntry && onOpenMonthlyEntry && shop && (
+              <button className="btn btn-outline btn-sm" onClick={onOpenMonthlyEntry} title="নির্বাচিত দোকানের মাসওয়ারি ভাড়ার এন্ট্রি">
+                <CalendarDays size={15} /> মাসভিত্তিক এন্ট্রি
               </button>
             )}
             {onOpenShopLedger && shop && (
@@ -961,7 +978,8 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
         />
       )}
 
-      {/* ১. এ মাসের হিসাবে দোকান ভাড়া খাতে কত উঠল */}
+      {/* ১. এ মাসের হিসাবে দোকান ভাড়া খাতে কত উঠল — কেবল হিসাবের পাতায় */}
+      {!isEntry && (
       <div className="card" style={{ marginBottom: '18px' }}>
         <div className="card-header">
           <div className="card-title">
@@ -1035,6 +1053,8 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
         </div>
       </div>
 
+      )}
+
       {/* ২. দোকান বাছাই */}
       {shops.length > 0 && (
         <div className="shop-pills">
@@ -1071,7 +1091,8 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
 
       {shop && status && (
         <>
-          {/* ৩. দোকানের তথ্য ও সারসংক্ষেপ */}
+          {/* ৩. দোকানের তথ্য ও সারসংক্ষেপ — কেবল হিসাবের পাতায় */}
+          {!isEntry && (
           <div className="metrics-grid" style={{ marginBottom: '16px' }}>
             <div className="metric-card primary">
               <div className="metric-label">{Calc.shopLabel(shop)} — মাসিক ভাড়া</div>
@@ -1162,8 +1183,10 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
               );
             })()}
           </div>
+          )}
 
-          {/* ৪. মাসভিত্তিক এন্ট্রি */}
+          {/* ৪. মাসভিত্তিক এন্ট্রি — আলাদা মেনু/পাতায় */}
+          {isEntry && (
           <div className="card">
             <div className="card-header">
               <div className="card-title">
@@ -1321,6 +1344,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger }) {
               </div>
             </div>
           </div>
+          )}
         </>
       )}
     </div>
