@@ -2070,9 +2070,14 @@ export function ReportView({
                         <td colSpan={2} style={{ textAlign: 'left', fontSize: '8.5px', fontWeight: 400, lineHeight: 1.25 }}>
                           {(dep.received || dep.adjusted || dep.refunded) ? (
                             <>
-                              জামানত {U.bnNumber(dep.received)} − সমন্বয় {U.bnNumber(dep.adjusted)}
-                              {dep.refunded > 0 && <> − ফেরত {U.bnNumber(dep.refunded)}</>} = <b>{U.bnNumber(dep.balance)}</b>
-                              <br />
+                              <div>জামানত: <b>{U.bnNumber(dep.received)}/-</b></div>
+                              <div>
+                                সমন্বয়: {dep.adjustedElec > 0
+                                  ? <>{U.bnNumber(dep.adjustedRent)} + {U.bnNumber(dep.adjustedElec)} = <b>{U.bnNumber(dep.adjusted)}</b></>
+                                  : <b>{U.bnNumber(dep.adjusted)}</b>}
+                              </div>
+                              {dep.refunded > 0 && <div>ফেরত প্রদান করা হয়েছে: <b>{U.bnNumber(dep.refunded)}/-</b></div>}
+                              {dep.balance > 0 && <div>জামানতে জমা: <b>{U.bnNumber(dep.balance)}/-</b></div>}
                             </>
                           ) : null}
                           {ended
@@ -2124,11 +2129,21 @@ export function ReportView({
                     )}
                   </td>
                   <td colSpan={2} style={{ textAlign: 'left', fontSize: '8.5px', fontWeight: 400, lineHeight: 1.25 }}>
-                    {shopLedgerFootStmt && (shopLedgerFootStmt.deposit.received > 0 || shopLedgerFootStmt.deposit.adjusted > 0) && (
-                      <>জামানত {U.bnNumber(shopLedgerFootStmt.deposit.received)} − সমন্বয় {U.bnNumber(shopLedgerFootStmt.deposit.adjusted)}
-                        {shopLedgerFootStmt.deposit.refunded > 0 && <> − ফেরত {U.bnNumber(shopLedgerFootStmt.deposit.refunded)}</>}
-                        {' '}= জমা <b>{U.bnNumber(shopLedgerFootStmt.deposit.balance)}</b></>
-                    )}
+                    {shopLedgerFootStmt && (shopLedgerFootStmt.deposit.received > 0 || shopLedgerFootStmt.deposit.adjusted > 0) && (() => {
+                      const d = shopLedgerFootStmt.deposit;
+                      return (
+                        <>
+                          <div>জামানত: <b>{U.bnNumber(d.received)}/-</b></div>
+                          <div>
+                            সমন্বয়: {d.adjustedElec > 0
+                              ? <>{U.bnNumber(d.adjustedRent)} + {U.bnNumber(d.adjustedElec)} = <b>{U.bnNumber(d.adjusted)}</b></>
+                              : <b>{U.bnNumber(d.adjusted)}</b>}
+                          </div>
+                          {d.refunded > 0 && <div>ফেরত প্রদান করা হয়েছে: <b>{U.bnNumber(d.refunded)}/-</b></div>}
+                          <div>জামানতে জমা: <b>{U.bnNumber(d.balance)}/-</b></div>
+                        </>
+                      );
+                    })()}
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     {shopLedgerFootStatus.due > 0
