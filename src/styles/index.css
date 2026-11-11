@@ -3693,3 +3693,5 @@ table.tbl-shop-summary th, table.tbl-shop-summary td,
 table.tbl-shop-deposit th, table.tbl-shop-deposit td,
 table.tbl-shop-ledger th, table.tbl-shop-ledger td { font-size: 11px; padding: 3px 6px; }
 table.tbl-shop-ledger tr.vacant-row > td { background: #f8fafc; color: #64748b; }
+/* দোকানভিত্তিক খতিয়ানে ভাড়াটিয়া বদলের চিহ্ন-সারি */
+table.tbl-shop-ledger tr.tenant-change-row > td { background: #fef3c7; color: #78350f; font-weight: 700; font-size: 10.5px; text-align: left; padding: 3px 8px; }

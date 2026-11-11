@@ -920,4 +920,15 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+  table.tbl-shop-ledger tr.tenant-change-row > td {
+    background: #fef3c7 !important;
+    color: #000 !important;
+    font-weight: 700 !important;
+    font-size: 10px !important;
+    text-align: left !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
 }

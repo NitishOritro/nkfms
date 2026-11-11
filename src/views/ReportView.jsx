@@ -1943,8 +1943,31 @@ export function ReportView({
                 </tr>
               </thead>
               <tbody>
-                {shopLedgerRows.map((lr) => (
-                  <tr key={lr.month} className={lr.vacant ? 'vacant-row' : undefined}>
+                {shopLedgerRows.map((lr, i) => {
+                  // ভাড়াটিয়া বদলের জায়গায় (বা শুরুতে / ফাঁকা হলে) পুরো-সারির চিহ্ন — পুরো দোকানের
+                  // বিবরণীতে, যখন ভাড়াটিয়ার ইতিহাস লেখা আছে
+                  const prev = i > 0 ? shopLedgerRows[i - 1] : null;
+                  const prevId = prev && prev.tenancy ? prev.tenancy.id : null;
+                  const curId = lr.tenancy ? lr.tenancy.id : null;
+                  let marker = null;
+                  if (shopLedgerTenantCol && !shopLedgerTenancy && (i === 0 || prevId !== curId)) {
+                    const left = prev && prev.tenancy && prev.tenancy.id !== curId
+                      ? ` (${prev.tenancy.tenantName || 'নামহীন'} ${U.monthLabelShort(prev.tenancy.toMonth || prev.month)}-এ ছেড়েছেন)` : '';
+                    marker = lr.tenancy
+                      ? `${U.monthLabelShort(lr.tenancy.fromMonth)} হতে ${i === 0 ? '' : 'নতুন '}ভাড়াটিয়া: ${lr.tenancy.tenantName || 'নামহীন'}`
+                        + (Number(lr.tenancy.rent) > 0 ? ` — মাসিক ভাড়া ${U.bnNumber(lr.tenancy.rent)}` : '')
+                        + (Number(lr.tenancy.advanceAmount) > 0 ? `, জামানত ${U.bnNumber(lr.tenancy.advanceAmount)}` : '')
+                        + left
+                      : `${U.monthLabelShort(lr.month)} হতে দোকান ফাঁকা${left}`;
+                  }
+                  return (
+                  <React.Fragment key={lr.month}>
+                  {marker && (
+                    <tr className="tenant-change-row">
+                      <td colSpan={9}>{marker}</td>
+                    </tr>
+                  )}
+                  <tr className={lr.vacant ? 'vacant-row' : undefined}>
                     <td style={{ textAlign: 'left' }}>
                       <b>{lr.label}</b>
                       {lr.depositIn > 0 && <div style={{ fontSize: '8.5px', color: '#a16207' }}>অ্যাডভান্স গ্রহণ {U.bnNumber(lr.depositIn)}</div>}
@@ -1976,7 +1999,9 @@ export function ReportView({
                         : lr.balance < 0 ? `অগ্রীম ${U.bnNumber(-lr.balance)}` : U.bnNumber(0)}
                     </td>
                   </tr>
-                ))}
+                  </React.Fragment>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr>
