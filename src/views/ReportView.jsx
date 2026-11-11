@@ -430,6 +430,8 @@ export function ReportView({
   const shopsAll = Calc.shopsSorted(data, true);
   const shopLedgerShop = shopsAll.find((x) => x.id === selectedShopId) || shopsAll[0] || null;
   const shopLedgerTenancies = shopLedgerShop ? Calc.shopTenancies(shopLedgerShop) : [];
+  // ভাড়াটিয়ার ইতিহাস থাকলে মূল ছকে "ভাড়ার মাস"-এর পাশে আলাদা "ভাড়াটিয়া" কলাম
+  const shopLedgerTenantCol = shopLedgerTenancies.length > 0;
   const shopLedgerTenancy = shopLedgerTenancies.find((t) => t.id === selectedTenancyId) || null;
   // একজন ভাড়াটিয়া বাছাই করলে কেবল তাঁর সময়কালের হিসাব (ছাড়ার সময়ের চূড়ান্ত হিসাব),
   // নইলে পুরো দোকান শুরু থেকে নির্বাচিত মাস পর্যন্ত
@@ -1872,28 +1874,62 @@ export function ReportView({
             </div>
 
             {shopLedgerTenancies.length > 0 && !shopLedgerTenancy && (
-              <div style={{ marginBottom: '8px', fontSize: '10px', color: '#334155' }}>
-                <b>ভাড়াটিয়ার ইতিহাস:</b>{' '}
-                {shopLedgerTenancies.map((t, i) => (
-                  <span key={t.id}>
-                    {i > 0 ? ' • ' : ''}{t.tenantName || 'নামহীন'} ({U.monthLabelShort(t.fromMonth)} হতে {t.toMonth ? U.monthLabelShort(t.toMonth) : 'চলছে'}
-                    {Number(t.rent) > 0 ? `, ভাড়া ${U.bnNumber(t.rent)}` : ''}{Number(t.advanceAmount) > 0 ? `, অ্যাডভান্স ${U.bnNumber(t.advanceAmount)}` : ''})
-                  </span>
-                ))}
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#1e293b', marginBottom: '3px' }}>ভাড়াটিয়ার ইতিহাস</div>
+                <table className="print-table tbl-shop-ledger tbl-tenancy-history">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '5%' }}>ক্রম</th>
+                      <th style={{ width: '22%', textAlign: 'left' }}>ভাড়াটিয়ার নাম</th>
+                      <th style={{ width: '13%' }}>মোবাইল</th>
+                      <th style={{ width: '12%' }}>হতে</th>
+                      <th style={{ width: '12%' }}>পর্যন্ত</th>
+                      <th style={{ width: '7%' }}>মাস</th>
+                      <th style={{ width: '11%' }}>মাসিক ভাড়া</th>
+                      <th style={{ width: '11%' }}>অ্যাডভান্স</th>
+                      <th style={{ width: '7%' }}>অবস্থা</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shopLedgerTenancies.map((t, i) => {
+                      const endIdx = Math.min(U.monthIndex(selectedMonth), t.toMonth ? U.monthIndex(t.toMonth) : Infinity);
+                      const months = Math.max(0, endIdx - U.monthIndex(t.fromMonth) + 1);
+                      return (
+                        <tr key={t.id}>
+                          <td style={{ textAlign: 'center' }}>{U.bnDigits(i + 1)}</td>
+                          <td style={{ textAlign: 'left', fontWeight: 600 }}>
+                            {t.tenantName || 'নামহীন'}
+                            {t.note && <div style={{ fontSize: '8.5px', fontWeight: 400, color: '#475569' }}>{t.note}</div>}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>{t.phone || DASH}</td>
+                          <td style={{ textAlign: 'center' }}>{U.monthLabelShort(t.fromMonth)}</td>
+                          <td style={{ textAlign: 'center' }}>{t.toMonth ? U.monthLabelShort(t.toMonth) : 'চলছে'}</td>
+                          <td style={{ textAlign: 'center' }}>{U.bnDigits(months)}</td>
+                          <td style={{ textAlign: 'right' }}>{Number(t.rent) > 0 ? U.bnNumber(t.rent) : DASH}</td>
+                          <td style={{ textAlign: 'right' }}>{Number(t.advanceAmount) > 0 ? U.bnNumber(t.advanceAmount) : DASH}</td>
+                          <td style={{ textAlign: 'center', fontSize: '9px', color: t.toMonth ? '#b91c1c' : '#15803d' }}>
+                            {t.toMonth ? 'ছেড়ে গেছেন' : 'বর্তমান'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
 
             <table className="print-table tbl-shop-ledger">
               <thead>
                 <tr>
-                  <th style={{ width: '19%', textAlign: 'left' }}>ভাড়ার মাস</th>
-                  <th className="th-charge" style={{ width: '10%' }}>ধার্য ভাড়া</th>
-                  <th className="th-paid" style={{ width: '10%' }}>নগদ জমা</th>
-                  <th style={{ width: '10%' }}>অ্যাডভান্স<br />সমন্বয়</th>
-                  <th style={{ width: '9%' }}>বিদ্যুৎ বিল</th>
-                  <th style={{ width: '14%' }}>জমার মাস</th>
-                  <th style={{ width: '16%' }}>আদায়কারী</th>
-                  <th className="th-due" style={{ width: '12%' }}>বকেয়া</th>
+                  <th style={{ width: shopLedgerTenantCol ? '14%' : '19%', textAlign: 'left' }}>ভাড়ার মাস</th>
+                  {shopLedgerTenantCol && <th style={{ width: '14%', textAlign: 'left' }}>ভাড়াটিয়া</th>}
+                  <th className="th-charge" style={{ width: '9%' }}>ধার্য ভাড়া</th>
+                  <th className="th-paid" style={{ width: '9%' }}>নগদ জমা</th>
+                  <th style={{ width: '9%' }}>অ্যাডভান্স<br />সমন্বয়</th>
+                  <th style={{ width: '8%' }}>বিদ্যুৎ বিল</th>
+                  <th style={{ width: shopLedgerTenantCol ? '12%' : '14%' }}>জমার মাস</th>
+                  <th style={{ width: shopLedgerTenantCol ? '14%' : '16%' }}>আদায়কারী</th>
+                  <th className="th-due" style={{ width: shopLedgerTenantCol ? '11%' : '12%' }}>বকেয়া</th>
                 </tr>
               </thead>
               <tbody>
@@ -1901,12 +1937,14 @@ export function ReportView({
                   <tr key={lr.month} className={lr.vacant ? 'vacant-row' : undefined}>
                     <td style={{ textAlign: 'left' }}>
                       <b>{lr.label}</b>
-                      {lr.tenancy && shopLedgerTenancies.length > 1 && !shopLedgerTenancy && (
-                        <span style={{ fontSize: '8.5px', color: '#475569' }}> — {lr.tenancy.tenantName || 'নামহীন'}</span>
-                      )}
                       {lr.depositIn > 0 && <div style={{ fontSize: '8.5px', color: '#a16207' }}>অ্যাডভান্স গ্রহণ {U.bnNumber(lr.depositIn)}</div>}
                       {lr.depositOut > 0 && <div style={{ fontSize: '8.5px', color: '#b91c1c' }}>অ্যাডভান্স ফেরত {U.bnNumber(lr.depositOut)}</div>}
                     </td>
+                    {shopLedgerTenantCol && (
+                      <td style={{ textAlign: 'left', fontSize: '9.5px', color: lr.vacant ? '#64748b' : '#1e293b' }}>
+                        {lr.vacant ? 'ফাঁকা' : lr.tenancy ? (lr.tenancy.tenantName || 'নামহীন') : (Calc.shopTenantName(shopLedgerShop) || DASH)}
+                      </td>
+                    )}
                     <td className="col-charge" style={{ textAlign: 'right' }}>
                       {lr.vacant ? <span style={{ fontSize: '9px' }}>ফাঁকা</span> : lr.charge ? U.bnNumber(lr.charge) : DASH}
                     </td>
@@ -1932,7 +1970,7 @@ export function ReportView({
               </tbody>
               <tfoot>
                 <tr>
-                  <td style={{ textAlign: 'right' }}>সর্বমোট</td>
+                  <td colSpan={shopLedgerTenantCol ? 2 : 1} style={{ textAlign: 'right' }}>সর্বমোট</td>
                   <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerStatus.charged)}</td>
                   <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerStatus.paidRent + shopLedgerStatus.paidOther)}</td>
                   <td style={{ textAlign: 'right' }}>{shopLedgerStatus.paidAdjust ? U.bnNumber(shopLedgerStatus.paidAdjust) : ''}</td>
