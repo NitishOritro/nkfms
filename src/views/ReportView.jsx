@@ -445,6 +445,11 @@ export function ReportView({
     ? Calc.shopTenancyStatement(data, shopLedgerShop, shopLedgerTenancy, selectedMonth)
     : null;
   const shopLedgerRows = shopLedgerStmt ? shopLedgerStmt.rows : [];
+  const shopLedgerStatus = shopLedgerStmt ? shopLedgerStmt.status : null;
+  const shopLedgerDeposit = shopLedgerStmt ? shopLedgerStmt.deposit : null;
+  const shopLedgerFrom = shopLedgerStmt ? shopLedgerStmt.fromMonth : selectedMonth;
+  const shopLedgerTo = shopLedgerStmt ? shopLedgerStmt.toMonth : selectedMonth;
+  const shopLedgerToShort = U.monthLabelShort(shopLedgerTo);
   // পুরো দোকানের বিবরণীতে হেডারে কার নাম — নির্বাচিত মাসের ভাড়াটিয়া, নইলে সর্বশেষজন
   const shopLedgerHeadTenancy = shopLedgerShop && shopLedgerTenantCol
     ? (Calc.shopTenancyFor(shopLedgerShop, selectedMonth) || Calc.shopCurrentTenancy(shopLedgerShop, selectedMonth))
@@ -467,11 +472,6 @@ export function ReportView({
       .map((t) => ({ tenancy: t, net: shopLedgerSettleFor(t).netRefund }))
       .filter((x) => x.net < 0)
     : [];
-  const shopLedgerStatus = shopLedgerStmt ? shopLedgerStmt.status : null;
-  const shopLedgerDeposit = shopLedgerStmt ? shopLedgerStmt.deposit : null;
-  const shopLedgerFrom = shopLedgerStmt ? shopLedgerStmt.fromMonth : selectedMonth;
-  const shopLedgerTo = shopLedgerStmt ? shopLedgerStmt.toMonth : selectedMonth;
-  const shopLedgerToShort = U.monthLabelShort(shopLedgerTo);
   // পুরোনো কাগজের একত্রিত "দোকান ভাড়া ও বিবিধ আয়" (সেটিংসে shopRentLegacy)
   const shopLegacy = Calc.shopRentLegacy(data);
   const shopLegacyTotal = shopLegacy.reduce((s2, l) => s2 + l.amount, 0);
