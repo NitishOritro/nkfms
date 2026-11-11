@@ -293,6 +293,14 @@
     print-color-adjust: exact !important;
   }
 
+  .print-table th.th-deposit,
+  .print-table td.col-deposit {
+    color: #a16207 !important;
+    font-weight: 600 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   .print-table th.th-paid,
   .print-table td.col-paid {
     color: #15803d !important;

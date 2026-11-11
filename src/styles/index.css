@@ -2346,6 +2346,11 @@ table.print-table tbody tr:nth-child(even) > td {
 .print-table th.th-paid,
 .print-table td.col-paid   { color: #15803d; }
 
+/* জামানত (অ্যাডভান্স) গ্রহণ — Dr; ভাড়ার টাকা নয়, তাই আলাদা অ্যাম্বার */
+.print-table th.th-deposit,
+.print-table td.col-deposit { color: #a16207; }
+.print-table td.col-deposit { font-weight: 600; }
+
 .print-table th.th-due     { color: #b91c1c; }
 .print-table th.th-flat    { color: #1e3a8a; }
 

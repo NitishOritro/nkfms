@@ -1957,15 +1957,16 @@ export function ReportView({
             <table className="print-table tbl-shop-ledger">
               <thead>
                 <tr>
-                  <th style={{ width: shopLedgerTenantCol ? '14%' : '19%', textAlign: 'left' }}>ভাড়ার মাস</th>
-                  {shopLedgerTenantCol && <th style={{ width: '14%', textAlign: 'left' }}>ভাড়াটিয়া</th>}
-                  <th className="th-charge" style={{ width: '9%' }}>ধার্য ভাড়া</th>
-                  <th className="th-paid" style={{ width: '9%' }}>নগদ জমা</th>
-                  <th style={{ width: '9%' }}>অ্যাডভান্স<br />সমন্বয়</th>
-                  <th style={{ width: '8%' }}>বিদ্যুৎ বিল</th>
-                  <th style={{ width: shopLedgerTenantCol ? '12%' : '14%' }}>জমার মাস</th>
-                  <th style={{ width: shopLedgerTenantCol ? '14%' : '16%' }}>আদায়কারী</th>
-                  <th className="th-due" style={{ width: shopLedgerTenantCol ? '11%' : '12%' }}>বকেয়া</th>
+                  <th style={{ width: shopLedgerTenantCol ? '13%' : '17%', textAlign: 'left' }}>ভাড়ার মাস</th>
+                  {shopLedgerTenantCol && <th style={{ width: '12%', textAlign: 'left' }}>ভাড়াটিয়া</th>}
+                  <th className="th-deposit" style={{ width: '9%' }} title="ভাড়াটিয়ার কাছ থেকে জামানত (অ্যাডভান্স) গ্রহণ — Dr; ফেরত — Cr">জামানত<br />গ্রহণ (Dr)</th>
+                  <th className="th-charge" style={{ width: '8%' }}>ধার্য ভাড়া</th>
+                  <th className="th-paid" style={{ width: '8%' }}>নগদ জমা</th>
+                  <th style={{ width: '8%' }}>অ্যাডভান্স<br />সমন্বয়</th>
+                  <th style={{ width: '7%' }}>বিদ্যুৎ বিল</th>
+                  <th style={{ width: shopLedgerTenantCol ? '11%' : '13%' }}>জমার মাস</th>
+                  <th style={{ width: shopLedgerTenantCol ? '13%' : '15%' }}>আদায়কারী</th>
+                  <th className="th-due" style={{ width: shopLedgerTenantCol ? '11%' : '15%' }}>বকেয়া</th>
                 </tr>
               </thead>
               <tbody>
@@ -1990,20 +1991,25 @@ export function ReportView({
                   <React.Fragment key={lr.month}>
                   {marker && (
                     <tr className="tenant-change-row">
-                      <td colSpan={9}>{marker}</td>
+                      <td colSpan={shopLedgerTenantCol ? 10 : 9}>{marker}</td>
                     </tr>
                   )}
                   <tr className={lr.vacant ? 'vacant-row' : undefined}>
                     <td style={{ textAlign: 'left' }}>
                       <b>{lr.label}</b>
-                      {lr.depositIn > 0 && <div style={{ fontSize: '8.5px', color: '#a16207' }}>অ্যাডভান্স গ্রহণ {U.bnNumber(lr.depositIn)}</div>}
-                      {lr.depositOut > 0 && <div style={{ fontSize: '8.5px', color: '#b91c1c' }}>অ্যাডভান্স ফেরত {U.bnNumber(lr.depositOut)}</div>}
                     </td>
                     {shopLedgerTenantCol && (
                       <td style={{ textAlign: 'left', fontSize: '9.5px', color: lr.vacant ? '#64748b' : '#1e293b' }}>
                         {lr.vacant ? 'ফাঁকা' : lr.tenancy ? (lr.tenancy.tenantName || 'নামহীন') : (Calc.shopTenantName(shopLedgerShop) || DASH)}
                       </td>
                     )}
+                    {/* জামানত — গ্রহণ Dr (ভাড়াটিয়ার জমা), ফেরত Cr */}
+                    <td className="col-deposit" style={{ textAlign: 'right' }}>
+                      {lr.depositIn > 0 ? <b>{U.bnNumber(lr.depositIn)}</b> : ''}
+                      {lr.depositOut > 0 && (
+                        <div style={{ fontSize: '8px', fontWeight: 400, color: '#b91c1c', lineHeight: 1.1 }}>Cr ফেরত {U.bnNumber(lr.depositOut)}</div>
+                      )}
+                    </td>
                     <td className="col-charge" style={{ textAlign: 'right' }}>
                       {lr.vacant ? <span style={{ fontSize: '9px' }}>ফাঁকা</span> : lr.charge ? U.bnNumber(lr.charge) : DASH}
                     </td>
@@ -2046,6 +2052,12 @@ export function ReportView({
                             {U.monthLabelShort(st.fromMonth)} হতে {U.monthLabelShort(st.toMonth)} ({U.bnDigits(st.rows.length)} মাস){ended ? ' — ছেড়ে গেছেন' : ''}
                           </div>
                         </td>
+                        <td className="col-deposit" style={{ textAlign: 'right' }}>
+                          {dep.received > 0 ? U.bnNumber(dep.received) : ''}
+                          {dep.refunded > 0 && (
+                            <div style={{ fontSize: '8px', fontWeight: 400, color: '#b91c1c', lineHeight: 1.1 }}>Cr ফেরত {U.bnNumber(dep.refunded)}</div>
+                          )}
+                        </td>
                         <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(st.status.charged)}</td>
                         <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(st.status.paidRent + st.status.paidOther)}</td>
                         <td style={{ textAlign: 'right' }}>{st.status.paidAdjust ? U.bnNumber(st.status.paidAdjust) : ''}</td>
@@ -2087,6 +2099,20 @@ export function ReportView({
                 <tr>
                   <td colSpan={shopLedgerTenantCol ? 2 : 1} style={{ textAlign: 'right' }}>
                     সর্বমোট{shopLedgerFootStmt ? ` — ${shopLedgerFootName} (${U.monthLabelShort(shopLedgerFootFrom)} হতে ${shopLedgerFootToShort})` : ''}
+                  </td>
+                  <td className="col-deposit" style={{ textAlign: 'right' }}>
+                    {(() => {
+                      const d = shopLedgerFootStmt ? shopLedgerFootStmt.deposit : shopLedgerDeposit;
+                      if (!d) return '';
+                      return (
+                        <>
+                          {d.received > 0 ? U.bnNumber(d.received) : ''}
+                          {d.refunded > 0 && (
+                            <div style={{ fontSize: '8px', fontWeight: 400, lineHeight: 1.1 }}>Cr ফেরত {U.bnNumber(d.refunded)}</div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </td>
                   <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerFootStatus.charged)}</td>
                   <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopLedgerFootStatus.paidRent + shopLedgerFootStatus.paidOther)}</td>
@@ -2158,7 +2184,7 @@ export function ReportView({
             <div className="print-note print-note-sm" style={{ marginTop: '8px' }}>
               <span className="print-note-tag">বি.দ্র.</span>
               <span>
-                ছকটি ভাড়ার মাস অনুযায়ী; "জমার মাস" কলামে কোন মাসের খতিয়ানে টাকাটা উঠেছে। বকেয়া = ধার্য − নগদ জমা −
+                ছকটি ভাড়ার মাস অনুযায়ী; "জামানত গ্রহণ (Dr)" কলামে ভাড়াটিয়ার কাছ থেকে নেওয়া অ্যাডভান্স, ফেরত দিলে "Cr"; এটি ভাড়ার হিসাবে ঢোকে না। "জমার মাস" কলামে কোন মাসের খতিয়ানে টাকাটা উঠেছে। বকেয়া = ধার্য − নগদ জমা −
                 অ্যাডভান্স থেকে সমন্বয়; বিদ্যুৎ বিল আলাদা, "অ্যাড." লেখা অংশ অ্যাডভান্স (জামানত) থেকে কাটা (নগদ নয়)।
                 {shopLedgerTenancy
                   ? ' এই বিবরণী কেবল উল্লিখিত ভাড়াটিয়ার সময়কালের।'
