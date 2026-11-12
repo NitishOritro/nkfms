@@ -507,6 +507,33 @@ export function ReportView({
     }
     return REPORT_LINK + '?' + q.toString();
   })();
+  // ব্রাউজারে "PDF হিসেবে সেভ" করলে ফাইলের নাম ট্যাবের নাম থেকেই আসে — তাই
+  // ট্যাবের নামে কোন রিপোর্ট, কার, কোন মাস পর্যন্ত, সব থাকে (নইলে সব
+  // রিপোর্টের ফাইল একই নামে নামত)। ফাইলের নামে চলে না এমন চিহ্ন বাদ।
+  const printTitle = (() => {
+    const upto = `${monthShort} পর্যন্ত`;
+    let t = '';
+    if (reportType === 'monthly') t = `সার্ভিস চার্জ জমা ও বকেয়া সারসংক্ষেপ - ${upto}`;
+    else if (reportType === 'selective') t = `বকেয়া সার্ভিস চার্জ বিবরণী - ${upto}`;
+    else if (reportType === 'dues-list') t = `মাসভিত্তিক সার্ভিস চার্জ জমা ও বকেয়া লিস্ট - ${upto}`;
+    else if (reportType === 'cashbook') t = `আয়-ব্যয় হিসাবায়ন সারসংক্ষেপ - ${monthShort}`;
+    else if (reportType === 'ledger') t = `ফ্ল্যাট ${ledgerFlat ? ledgerFlat.flatNo : ''} লেজার - ${U.monthLabelShort(ledgerMonth)} পর্যন্ত`;
+    else if (reportType === 'shop-rent') t = `দোকান ভাড়া আদায় ও বকেয়া বিবরণী - ${monthShort}`;
+    else if (reportType === 'shop-ledger') {
+      const who = shopLedgerShop ? Calc.shopLabel(shopLedgerShop) : 'দোকান';
+      t = shopLedgerTenancy
+        ? `${who} ${shopLedgerTenancy.tenantName || ''} চূড়ান্ত হিসাব - ${U.monthLabelShort(shopLedgerFrom)} হতে ${shopLedgerToShort}`
+        : `${who} ভাড়ার লেজার - ${upto}`;
+    }
+    return t.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+  })();
+  useEffect(() => {
+    if (!printTitle) return undefined;
+    const prev = document.title;
+    document.title = `${printTitle} - NKFMS`;
+    return () => { document.title = prev; };
+  }, [printTitle]);
+
   const [qrDataUrl, setQrDataUrl] = useState('');
   useEffect(() => {
     QRCode.toDataURL(qrLink, { errorCorrectionLevel: 'M', margin: 1, scale: 8 })

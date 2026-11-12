@@ -138,6 +138,8 @@ export function App() {
 
   // ব্রাউজার ট্যাবের নাম — কোন পেজে আছি তা ট্যাব দেখেই বোঝা যায়
   useEffect(() => {
+    // রিপোর্টের পাতায় নামটি ReportView নিজে বসায় (রিপোর্টের নাম = PDF-এর নাম)
+    if (isAuthenticated && currentTab === 'reports') return;
     document.title = isAuthenticated
       ? `${PAGE_TITLES[currentTab] || 'ড্যাশবোর্ড'} — ${SITE_NAME}`
       : `লগইন — ${SITE_NAME}`;
