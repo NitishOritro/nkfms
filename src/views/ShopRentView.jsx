@@ -978,84 +978,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger, onOpenMonthlyEntry
         />
       )}
 
-      {/* ১. এ মাসের হিসাবে দোকান ভাড়া খাতে কত উঠল — কেবল হিসাবের পাতায় */}
-      {!isEntry && (
-      <div className="card" style={{ marginBottom: '18px' }}>
-        <div className="card-header">
-          <div className="card-title">
-            <Wallet size={17} color="var(--success)" />
-            <span>{U.monthLabel(selectedMonth)} মাসের হিসাবে দোকান ভাড়া খাতে জমা</span>
-          </div>
-          <div style={{ fontWeight: 700, fontSize: '15.5px', color: 'var(--success)' }}>
-            ৳{U.bnNumber(monthSummary.totals.total)}
-          </div>
-        </div>
-        <div className="card-body flush">
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '90px' }}>দোকান</th>
-                  <th>ভাড়াটিয়া</th>
-                  <th>কোন মাসের ভাড়া</th>
-                  <th className="amount">ভাড়া</th>
-                  <th className="amount">বিদ্যুৎ বিল</th>
-                  <th className="amount">অন্যান্য</th>
-                  <th className="amount">মোট</th>
-                  <th>আদায়কারী</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthSummary.rows.length ? monthSummary.rows.map((r) => (
-                  <tr key={r.shop.id}>
-                    <td><b>{Calc.shopLabel(r.shop)}</b></td>
-                    <td>{Calc.shopTenantName(r.shop, r.rentMonths[0] || selectedMonth) || <span style={{ color: '#94a3b8' }}>—</span>}</td>
-                    <td style={{ fontSize: '12px' }}>
-                      {r.rentMonths.map(U.monthLabelShort).join(', ') || '—'}
-                      {r.notes.length > 0 && (
-                        <div style={{ color: '#64748b', fontSize: '11px', marginTop: '2px' }}>
-                          {r.notes.join('; ')}
-                        </div>
-                      )}
-                    </td>
-                    <td className="amount">{num(r.rent)}</td>
-                    <td className="amount">{num(r.electricity)}</td>
-                    <td className="amount">{num(r.other)}</td>
-                    <td className="amount" style={{ fontWeight: 700, color: 'var(--primary-dark)' }}>{U.bnNumber(r.total)}</td>
-                    <td style={{ fontSize: '12px' }}>{r.collectorIds.map(collectorName).filter(Boolean).join(', ') || '—'}</td>
-                  </tr>
-                )) : (
-                  <tr>
-                    <td colSpan="8" className="empty-state">
-                      <div className="empty-state-icon"><Inbox size={24} /></div>
-                      <div className="empty-state-title">
-                        {U.monthLabel(selectedMonth)} মাসের হিসাবে দোকান ভাড়ার কোনো জমা নেই
-                      </div>
-                      <p>নিচে দোকান বেছে ভাড়ার মাসের ঘরে টাকা লিখুন, "জমার মাস" ঘরে এই মাসটি বাছুন।</p>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              {monthSummary.rows.length > 0 && (
-                <tfoot>
-                  <tr style={{ fontWeight: 700, background: 'var(--bg-muted)' }}>
-                    <td colSpan="3">মোট ({U.bnDigits(monthSummary.totals.shopCount)} টি দোকান)</td>
-                    <td className="amount">{U.bnNumber(monthSummary.totals.rent)}</td>
-                    <td className="amount">{U.bnNumber(monthSummary.totals.electricity)}</td>
-                    <td className="amount">{U.bnNumber(monthSummary.totals.other)}</td>
-                    <td className="amount" style={{ color: 'var(--success)' }}>{U.bnNumber(monthSummary.totals.total)}</td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
-        </div>
-      </div>
-
-      )}
-
-      {/* ২. দোকান বাছাই */}
+      {/* ১. দোকান বাছাই */}
       {shops.length > 0 && (
         <div className="shop-pills">
           {shops.map((s) => {
@@ -1067,11 +990,14 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger, onOpenMonthlyEntry
                 className={`shop-pill${s.id === selectedShopId ? ' active' : ''}${s.active === false ? ' inactive' : ''}`}
                 onClick={() => setSelectedShopId(s.id)}
               >
-                <span className="sp-no">{Calc.shopLabel(s)}</span>
+                <span className="sp-top">
+                  <span className="sp-no">{Calc.shopLabel(s)}</span>
+                  <span className="sp-rent">৳{U.bnNumber(Calc.shopRentForMonth(s, currentMonth))}/মাস</span>
+                </span>
                 <span className="sp-name">
                   {Calc.shopTenantName(s) || (Calc.shopTenancies(s).length && !Calc.shopTenancyFor(s, currentMonth) ? 'এখন ফাঁকা' : 'ভাড়াটিয়ার নাম নেই')}
                 </span>
-                <span className={`sp-due${st.due > 0 ? ' has-due' : ''}`}>
+                <span className={`sp-due${st.due > 0 ? ' has-due' : st.advance > 0 ? ' has-adv' : ''}`}>
                   {st.due > 0 ? `বকেয়া ৳${U.bnNumber(st.due)}` : st.advance > 0 ? `অগ্রীম ৳${U.bnNumber(st.advance)}` : 'বকেয়া নেই'}
                 </span>
               </button>
@@ -1091,7 +1017,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger, onOpenMonthlyEntry
 
       {shop && status && (
         <>
-          {/* ৩. দোকানের তথ্য ও সারসংক্ষেপ — কেবল হিসাবের পাতায় */}
+          {/* ২. দোকানের তথ্য ও সারসংক্ষেপ — কেবল হিসাবের পাতায় */}
           {!isEntry && (
           <div className="metrics-grid" style={{ marginBottom: '16px' }}>
             <div className="metric-card primary">
@@ -1185,7 +1111,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger, onOpenMonthlyEntry
           </div>
           )}
 
-          {/* ৪. মাসভিত্তিক এন্ট্রি — আলাদা মেনু/পাতায় */}
+          {/* ৩. মাসভিত্তিক এন্ট্রি — আলাদা মেনু/পাতায় */}
           {isEntry && (
           <div className="card">
             <div className="card-header">
@@ -1347,6 +1273,87 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger, onOpenMonthlyEntry
           )}
         </>
       )}
+
+      {/* ৫. এ মাসের হিসাবে সব দোকান থেকে ভাড়া খাতে কত উঠল — পাতার নিচে, ছোট কার্ড */}
+      {!isEntry && (
+      <div className="card card-auto" style={{ marginBottom: '18px' }}>
+        <div className="card-header">
+          <div>
+            <div className="card-title">
+              <Wallet size={17} color="var(--success)" />
+              <span>{U.monthLabel(selectedMonth)} মাসের হিসাবে সব দোকান থেকে ভাড়া খাতে জমা</span>
+            </div>
+            <div className="card-sub">জমার মাস ধরে — আয়-ব্যয় খতিয়ানে "দোকানের ভাড়া আদায়" সারিটি এই অঙ্কেই বসে। মাস বদলাতে উপরের মাস-বাছাই ব্যবহার করুন।</div>
+          </div>
+          <div style={{ fontWeight: 700, fontSize: '15.5px', color: 'var(--success)' }}>
+            ৳{U.bnNumber(monthSummary.totals.total)}
+          </div>
+        </div>
+        <div className="card-body flush">
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '90px' }}>দোকান</th>
+                  <th>ভাড়াটিয়া</th>
+                  <th>কোন মাসের ভাড়া</th>
+                  <th className="amount">ভাড়া</th>
+                  <th className="amount">বিদ্যুৎ বিল</th>
+                  <th className="amount">অন্যান্য</th>
+                  <th className="amount">মোট</th>
+                  <th>আদায়কারী</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthSummary.rows.length ? monthSummary.rows.map((r) => (
+                  <tr key={r.shop.id}>
+                    <td><b>{Calc.shopLabel(r.shop)}</b></td>
+                    <td>{Calc.shopTenantName(r.shop, r.rentMonths[0] || selectedMonth) || <span style={{ color: '#94a3b8' }}>—</span>}</td>
+                    <td style={{ fontSize: '12px' }}>
+                      {r.rentMonths.map(U.monthLabelShort).join(', ') || '—'}
+                      {r.notes.length > 0 && (
+                        <div style={{ color: '#64748b', fontSize: '11px', marginTop: '2px' }}>
+                          {r.notes.join('; ')}
+                        </div>
+                      )}
+                    </td>
+                    <td className="amount">{num(r.rent)}</td>
+                    <td className="amount">{num(r.electricity)}</td>
+                    <td className="amount">{num(r.other)}</td>
+                    <td className="amount" style={{ fontWeight: 700, color: 'var(--primary-dark)' }}>{U.bnNumber(r.total)}</td>
+                    <td style={{ fontSize: '12px' }}>{r.collectorIds.map(collectorName).filter(Boolean).join(', ') || '—'}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan="8" className="empty-state">
+                      <div className="empty-state-icon"><Inbox size={24} /></div>
+                      <div className="empty-state-title">
+                        {U.monthLabel(selectedMonth)} মাসের হিসাবে দোকান ভাড়ার কোনো জমা নেই
+                      </div>
+                      <p>নিচে দোকান বেছে ভাড়ার মাসের ঘরে টাকা লিখুন, "জমার মাস" ঘরে এই মাসটি বাছুন।</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {monthSummary.rows.length > 0 && (
+                <tfoot>
+                  <tr style={{ fontWeight: 700, background: 'var(--bg-muted)' }}>
+                    <td colSpan="3">মোট ({U.bnDigits(monthSummary.totals.shopCount)} টি দোকান)</td>
+                    <td className="amount">{U.bnNumber(monthSummary.totals.rent)}</td>
+                    <td className="amount">{U.bnNumber(monthSummary.totals.electricity)}</td>
+                    <td className="amount">{U.bnNumber(monthSummary.totals.other)}</td>
+                    <td className="amount" style={{ color: 'var(--success)' }}>{U.bnNumber(monthSummary.totals.total)}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      </div>
+
+      )}
+
     </div>
   );
 }

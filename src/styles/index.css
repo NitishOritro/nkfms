@@ -925,6 +925,18 @@ b, strong { font-weight: 700; }
   flex-direction: column;
 }
 
+/* card-auto — ছোট তালিকার কার্ড: পাতার বাকি উচ্চতা নেয় না, নিজের মাপেই থাকে
+   (যেমন দোকান পাতার "এ মাসের জমা" — কয়েক সারির টেবিলের নিচে বিশাল ফাঁকা
+   পড়ে থাকত)। বেশি সারি হলে ভেতরে নিজে স্ক্রল করে। */
+.page-body > .card.card-auto:has(.table-container) {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+.page-body > .card.card-auto:has(.table-container) .table-container {
+  min-height: 0;
+  max-height: 360px;
+}
+
 .page-body > .card:has(.table-container) .table-container {
   flex: 1 1 auto;
   /* একেবারে ০ দিলে ছোট পর্দায় বা লম্বা পেজে (যেমন ড্যাশবোর্ড) টেবিলটি
@@ -3599,33 +3611,46 @@ table.cashbook-table tfoot tr.cashbook-note td {
 
 /* দোকান বাছাইয়ের পিল — কোন দোকানের বকেয়া আছে, এক নজরে */
 .shop-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
   margin-bottom: 16px;
 }
 
 .shop-pill {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  min-width: 170px;
-  padding: 10px 14px;
+  align-items: stretch;
+  gap: 4px;
+  padding: 12px 14px 11px;
   border: 1px solid var(--border);
+  border-left: 4px solid #cbd5e1;
   border-radius: var(--radius-md);
   background: var(--bg-card);
   cursor: pointer;
   text-align: left;
+  box-shadow: var(--shadow-xs);
   transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), transform 0.15s var(--ease);
 }
 .shop-pill:hover { border-color: var(--primary); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
-.shop-pill.active { border-color: var(--primary); background: #eff6ff; box-shadow: 0 0 0 2px var(--focus-ring); }
+.shop-pill.active { border-color: var(--primary); border-left-color: var(--primary); background: #eff6ff; box-shadow: 0 0 0 2px var(--focus-ring); }
 .shop-pill.inactive { opacity: 0.6; }
-.shop-pill .sp-no { font-weight: 700; font-size: 14px; color: var(--primary-dark); }
-.shop-pill .sp-name { font-size: 12px; color: #475569; }
-.shop-pill .sp-due { font-size: 11px; color: var(--success); font-weight: 600; margin-top: 2px; }
-.shop-pill .sp-due.has-due { color: var(--danger); }
+.shop-pill .sp-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.shop-pill .sp-no { font-weight: 700; font-size: 14.5px; color: var(--primary-dark); }
+.shop-pill .sp-rent { font-size: 11px; color: #64748b; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.shop-pill .sp-name { font-size: 12.5px; color: #334155; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shop-pill .sp-due {
+  align-self: flex-start;
+  font-size: 11px; font-weight: 600; margin-top: 2px;
+  padding: 2px 8px; border-radius: 999px;
+  color: #047857; background: #ecfdf5;
+}
+.shop-pill .sp-due.has-due { color: #b91c1c; background: #fef2f2; }
+.shop-pill .sp-due.has-adv { color: #b45309; background: #fffbeb; }
+.shop-pill:has(.sp-due.has-due) { border-left-color: #ef4444; }
+.shop-pill:has(.sp-due.has-adv) { border-left-color: #f59e0b; }
+.shop-pill:has(.sp-due:not(.has-due):not(.has-adv)) { border-left-color: #10b981; }
+.shop-pill.active { border-left-color: var(--primary); }
 
 /* মাসভিত্তিক এন্ট্রি গ্রিড */
 .shop-grid-wrap { max-height: 62vh; }
