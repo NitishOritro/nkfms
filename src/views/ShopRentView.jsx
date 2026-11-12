@@ -105,9 +105,40 @@ function DepositReceiptQuick({ amount, received = 0, existingMonth = '', default
 }
 
 /* --------------------------------------------------------------------------
+   জামানত গ্রহণের সারি আছে, অথচ চুক্তির অঙ্ক নেই বা তার চেয়ে কম — চুক্তির ঘর
+   মুছলে গ্রহণের সারি নিজে মোছে না (সেটি আসল টাকার হিসাব); ভুল এন্ট্রি হলে
+   এখান থেকে মুছুন
+   -------------------------------------------------------------------------- */
+function DepositReceiptStale({ rows, agreed, who, onDelete }) {
+  return (
+    <div style={{ gridColumn: '1 / -1', padding: '8px 10px', border: '1px dashed #ef4444', borderRadius: '8px', background: '#fef2f2', marginBottom: '10px' }}>
+      <div style={{ fontSize: '12px', color: '#b91c1c', fontWeight: 600 }}>
+        {who ? `${who} — ` : ''}
+        {agreed > 0
+          ? <>চুক্তির অঙ্ক {U.bnTaka(agreed)}, কিন্তু জামানত <u>গ্রহণ</u> লেখা আছে তার চেয়ে বেশি:</>
+          : <>চুক্তিতে জামানত নেই, কিন্তু জামানত <u>গ্রহণের</u> সারি রয়ে গেছে — তাই খতিয়ান ও রিপোর্টে দেখাচ্ছে। ভুল হলে মুছুন:</>}
+      </div>
+      {rows.map((r) => (
+        <div key={r.id} style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '6px', fontSize: '12px' }}>
+          <span>{U.monthLabelShort(r.rentMonth)} মাসের হিসাবে গ্রহণ <b>{U.bnTaka(r.amount)}</b>{r.note ? ` — ${r.note}` : ''}</span>
+          <button type="button" className="btn btn-danger btn-sm" onClick={() => {
+            if (window.confirm(`${U.monthLabelShort(r.rentMonth)} মাসের জামানত গ্রহণ ${U.bnTaka(r.amount)} সারিটি মুছে ফেলবেন?`)) onDelete(r);
+          }}>
+            <Trash2 size={13} /> এই সারি মুছুন
+          </button>
+        </div>
+      ))}
+      <div className="form-hint" style={{ marginTop: '4px' }}>
+        মোছা সাথে সাথে সেভ হয়। চুক্তির অঙ্ক কেবল তথ্য; আসল টাকা এই সারিতেই, তাই চুক্তির ঘর মুছলে এটি নিজে মোছে না।
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
    দোকানের তথ্যের ফর্ম (নতুন / সম্পাদনা)
    -------------------------------------------------------------------------- */
-function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTenancy = [], deposit = null, collectors = [], onReceiveDeposit = null }) {
+function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTenancy = [], deposit = null, collectors = [], onReceiveDeposit = null, onDeleteDeposit = null }) {
   const set = (patch) => setDraft({ ...draft, ...patch });
   const history = draft.rentHistory || [];
   const setHist = (i, patch) =>
@@ -197,6 +228,11 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTe
             onSubmit={(e) => onReceiveDeposit({ ...e, tenancyId: '' })}
           />
         )}
+        {draft.id && onDeleteDeposit && deposit && deposit.received > Number(draft.advanceAmount || 0)
+          && deposit.history.some((r) => r.kind === 'advance') && (
+          <DepositReceiptStale key={`stale-${draft.id}`} rows={deposit.history.filter((r) => r.kind === 'advance')}
+            agreed={Number(draft.advanceAmount || 0)} onDelete={onDeleteDeposit} />
+        )}
         <div className="form-group" style={field}>
           <label className="form-label">অ্যাডভান্স থেকে মাসে কত কাটা হবে</label>
           <input className="form-input" type="number" min="0" value={draft.advanceAdjust}
@@ -280,6 +316,17 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTe
                   who={t.tenantName || 'এই ভাড়াটিয়া'}
                   onSubmit={(e) => onReceiveDeposit({ ...e, tenancyId: t.id })}
                 />
+              );
+            })()}
+            {/* চুক্তির ঘর মুছে/কমিয়ে দেওয়া হয়েছে অথচ গ্রহণের সারি রয়ে গেছে — ভুল হলে এখানেই মুছুন */}
+            {(() => {
+              const d = depositByTenancy.find((x) => x.tenancy && x.tenancy.id === t.id);
+              if (!draft.id || !onDeleteDeposit || !d) return null;
+              const adv = d.history.filter((r) => r.kind === 'advance');
+              if (!adv.length || !(d.received > Number(t.advanceAmount || 0))) return null;
+              return (
+                <DepositReceiptStale key={`stale-${t.id}`} rows={adv} agreed={Number(t.advanceAmount || 0)}
+                  who={t.tenantName || 'এই ভাড়াটিয়া'} onDelete={onDeleteDeposit} />
               );
             })()}
             {/* "পর্যন্ত" বসানো হলো অথচ জামানত বাকি — ফেরত লেখার কথা মনে করিয়ে দেওয়া */}
@@ -883,6 +930,12 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger, onOpenMonthlyEntry
       collectorId, tenancyId: tenancyId || '', note: 'জামানত গ্রহণ'
     }]);
   };
+  // জামানত গ্রহণের ভুল সারি মোছা — অঙ্ক ০ লিখলে saveShopRents সারিটি মুছে দেয়
+  const deleteDepositRow = (r) => {
+    if (!shop) return;
+    saveShopRents([{ shopId: shop.id, rentMonth: r.rentMonth, kind: r.kind, amount: 0 }]);
+    addToast(`${Calc.shopLabel(shop)} — ${U.monthLabelShort(r.rentMonth)} মাসের জামানত গ্রহণ ${U.bnTaka(r.amount)} মুছে ফেলা হয়েছে।`, 'success');
+  };
   const removeShop = () => {
     if (!shop) return;
     const n = Calc.shopRentsOf(data, shop.id).length;
@@ -976,6 +1029,7 @@ export function ShopRentView({ onOpenPrint, onOpenShopLedger, onOpenMonthlyEntry
           deposit={shopDraft.id && shop && shop.id === shopDraft.id ? Calc.shopDeposit(data, shop) : null}
           collectors={collectors}
           onReceiveDeposit={shopDraft.id && shop && shop.id === shopDraft.id ? receiveDeposit : null}
+          onDeleteDeposit={shopDraft.id && shop && shop.id === shopDraft.id ? deleteDepositRow : null}
         />
       )}
 

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import * as Calc from '../utils/calc';
 import * as U from '../utils/format';
-import { Store, Lock, Save, AlertTriangle, Eye, Info, Zap } from 'lucide-react';
+import { Store, Lock, Save, AlertTriangle, Eye, Info, Zap, Trash2 } from 'lucide-react';
 
 // ============================================================================
 //  দোকান ভাড়া এন্ট্রি ফর্ম
@@ -1029,6 +1029,19 @@ export function ShopRentEntryFormView() {
                       {U.monthLabelShort(r.rentMonth)}: {Calc.shopKindLabel(r.kind)} <b>{U.bnTaka(r.amount)}</b>
                       {Calc.SHOP_ADJUST_KINDS.includes(r.kind) && r.paidMonth !== r.rentMonth ? ` (${U.monthLabelShort(r.paidMonth)} এর হিসাবে)` : ''}
                       {r.note ? ` — ${r.note}` : ''}
+                      {canWrite && (r.kind === 'advance' || r.kind === 'advance-refund') && (
+                        <>
+                          {' '}
+                          <button type="button" className="link-btn" style={{ color: '#b91c1c' }} title="ভুল এন্ট্রি হলে এই সারিটি মুছুন"
+                            onClick={() => {
+                              if (!window.confirm(`${U.monthLabelShort(r.rentMonth)} মাসের ${Calc.shopKindLabel(r.kind)} ${U.bnTaka(r.amount)} সারিটি মুছে ফেলবেন?`)) return;
+                              saveShopRents([{ shopId: shop.id, rentMonth: r.rentMonth, kind: r.kind, amount: 0 }]);
+                              addToast(`${Calc.shopLabel(shop)} — ${U.monthLabelShort(r.rentMonth)} মাসের ${Calc.shopKindLabel(r.kind)} ${U.bnTaka(r.amount)} মুছে ফেলা হয়েছে।`, 'success');
+                            }}>
+                            <Trash2 size={12} /> মুছুন
+                          </button>
+                        </>
+                      )}
                     </li>
                   ))}
                   <li>এখন জমা আছে <b>{U.bnTaka(deposit.balance)}</b></li>
