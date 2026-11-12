@@ -1208,6 +1208,11 @@ export function ReportView({
               const cols = page.cols || [];
               const ci = page.index || 0;
               const sum = (fn) => cols.reduce((t, c) => t + fn(c), 0);
+              // এই ছকের মাস: ছকের ফ্ল্যাটগুলোর মধ্যে সবচেয়ে আগের চার্জ-শুরু থেকে।
+              // সব ফ্ল্যাট পরে শুরু হলে (যেমন জুন-২৫) তার আগের ধূসর মাসগুলো বাদ।
+              const chunkFromIdx = cols.length ? Math.min(...cols.map((c) => U.monthIndex(c.startMonth))) : 0;
+              const chunkMonths = duesMonths.filter((m) => U.monthIndex(m) >= chunkFromIdx);
+              const chunkOffset = duesMonths.length - chunkMonths.length;
               return (
                 <div className="dues-page" key={pi}>
                   <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />
@@ -1237,14 +1242,24 @@ export function ReportView({
 
                   {page.kind === 'chunk' && (
                 <div className="dues-chunk">
-                  {duesChunks.length > 1 && (
+                  {(duesChunks.length > 1 || chunkOffset > 0) && (
                     <div className="dues-chunk-caption">
-                      ছক {U.bnDigits(ci + 1)}/{U.bnDigits(duesChunks.length)}: ফ্ল্যাট{' '}
-                      <b className="flat-no">{cols[0].flat.flatNo}</b> হতে{' '}
-                      <b className="flat-no">{cols[cols.length - 1].flat.flatNo}</b>
+                      {duesChunks.length > 1 && (
+                        <>
+                          ছক {U.bnDigits(ci + 1)}/{U.bnDigits(duesChunks.length)}: ফ্ল্যাট{' '}
+                          <b className="flat-no">{cols[0].flat.flatNo}</b>
+                          {cols.length > 1 && <> হতে <b className="flat-no">{cols[cols.length - 1].flat.flatNo}</b></>}
+                        </>
+                      )}
+                      {chunkOffset > 0 && chunkMonths.length > 0 && (
+                        <>
+                          {duesChunks.length > 1 ? ' — ' : ''}
+                          {U.monthLabelShort(chunkMonths[0])} হতে {U.monthLabelShort(duesUpToMonth)} ({U.bnDigits(chunkMonths.length)} মাস)
+                        </>
+                      )}
                     </div>
                   )}
-                  <table className={`print-table tbl-dues-matrix${duesMonths.length > 30 ? ' is-dense' : ''}`}>
+                  <table className={`print-table tbl-dues-matrix${chunkMonths.length > 30 ? ' is-dense' : ''}`}>
                     <thead>
                       <tr>
                         <th style={{ textAlign: 'left', width: '14%' }}>মাস</th>
@@ -1284,7 +1299,8 @@ export function ReportView({
                           <td></td>
                         </tr>
                       )}
-                      {duesMonths.map((m, mi) => {
+                      {chunkMonths.map((m, cmi) => {
+                        const mi = cmi + chunkOffset;
                         const rowTotal = sum((c) => c.cells[mi].paid);
                         return (
                           <tr key={m}>
