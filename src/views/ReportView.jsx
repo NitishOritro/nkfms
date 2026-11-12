@@ -17,7 +17,7 @@ const REPORT_LINK = 'https://nkfms-8c1a6.web.app/#/reports';
 
 // QR-এ রিপোর্টের পরিচয়ও থাকে: #/reports?rt=<ধরন>&rm=<মাস>&rf=<ফ্ল্যাট>।
 // স্ক্যান করলে ভিউ মোডে ঢুকে (AuthContext) ঠিক সেই রিপোর্টটিই খুলে যায়।
-const REPORT_TYPES = ['monthly', 'selective', 'dues-list', 'cashbook', 'ledger', 'shop-rent', 'shop-ledger'];
+const REPORT_TYPES = ['monthly', 'selective', 'dues-list', 'cashbook', 'ledger', 'shop-rent', 'shop-summary', 'shop-ledger'];
 function readDeepLink() {
   const h = typeof window !== 'undefined' ? window.location.hash || '' : '';
   const qi = h.indexOf('?');
@@ -519,6 +519,7 @@ export function ReportView({
     else if (reportType === 'cashbook') t = `আয়-ব্যয় হিসাবায়ন সারসংক্ষেপ - ${monthShort}`;
     else if (reportType === 'ledger') t = `ফ্ল্যাট ${ledgerFlat ? ledgerFlat.flatNo : ''} লেজার - ${U.monthLabelShort(ledgerMonth)} পর্যন্ত`;
     else if (reportType === 'shop-rent') t = `দোকান ভাড়া আদায় ও বকেয়া বিবরণী - ${monthShort}`;
+    else if (reportType === 'shop-summary') t = `দোকানওয়ারি হিসাব সারসংক্ষেপ - ${upto}`;
     else if (reportType === 'shop-ledger') {
       const who = shopLedgerShop ? Calc.shopLabel(shopLedgerShop) : 'দোকান';
       t = shopLedgerTenancy
@@ -567,6 +568,7 @@ export function ReportView({
           {reportType === 'cashbook' && `সার্ভিস হিসাবায়ন সারসংক্ষেপ (${monthShort})`}
           {reportType === 'ledger' && `ফ্ল্যাটভিত্তিক সার্ভিস চার্জ লেজার ও বকেয়া বিবরণী (${ledgerMonthLabel} পর্যন্ত)`}
           {reportType === 'shop-rent' && `দোকান ভাড়া আদায় ও বকেয়া বিবরণী (${monthShort})`}
+          {reportType === 'shop-summary' && `দোকানওয়ারি হিসাব সারসংক্ষেপ (${monthShort} পর্যন্ত)`}
           {reportType === 'shop-ledger' && (shopLedgerTenancy
             ? `ভাড়াটিয়ার চূড়ান্ত হিসাব — ভাড়া, বিদ্যুৎ ও অ্যাডভান্স (${U.monthLabelShort(shopLedgerFrom)} হতে ${shopLedgerToShort})`
             : `দোকানভিত্তিক ভাড়ার লেজার ও বকেয়া বিবরণী (${monthShort} পর্যন্ত)`)}
@@ -671,6 +673,12 @@ export function ReportView({
             className={`btn btn-sm ${reportType === 'shop-rent' ? 'btn-primary' : 'btn-outline'}`}
           >
             <Store size={14} /> দোকান ভাড়া বিবরণী
+          </button>
+          <button
+            onClick={() => setReportType('shop-summary')}
+            className={`btn btn-sm ${reportType === 'shop-summary' ? 'btn-primary' : 'btn-outline'}`}
+          >
+            <Store size={14} /> দোকানওয়ারি সারসংক্ষেপ
           </button>
           <button
             onClick={() => setReportType('shop-ledger')}
@@ -885,8 +893,8 @@ export function ReportView({
         {/* Centered Watermark ও 3-Column Header — মাসভিত্তিক বকেয়া লিস্ট
             ছাড়া সব রিপোর্টে শিটের উপরে একবার; ওই লিস্টে প্রতি পাতায় আলাদা */}
         {/* দোকান ভাড়া বিবরণী দুই পাতার — জলছাপ ও শিরোনাম পাতার ভেতরে বসে */}
-        {reportType !== 'dues-list' && reportType !== 'shop-rent' && reportType !== 'shop-ledger' && <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />}
-        {reportType !== 'dues-list' && reportType !== 'shop-rent' && reportType !== 'shop-ledger' && headBlock}
+        {reportType !== 'dues-list' && reportType !== 'shop-rent' && reportType !== 'shop-summary' && reportType !== 'shop-ledger' && <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />}
+        {reportType !== 'dues-list' && reportType !== 'shop-rent' && reportType !== 'shop-summary' && reportType !== 'shop-ledger' && headBlock}
 
         {/* REPORT 1: Monthly Summary */}
         {reportType === 'monthly' && (
@@ -1553,9 +1561,10 @@ export function ReportView({
         )}
 
         {/* REPORT 5: দোকান ভাড়া — মাসভিত্তিক, দোকানওয়ারি */}
-        {reportType === 'shop-rent' && (
+        {(reportType === 'shop-rent' || reportType === 'shop-summary') && (
           <>
-            {/* ---- ১ম পাতা: মাস × দোকান ছক ---- */}
+            {/* ---- ১ম পাতা: মাস × দোকান ছক — কেবল পূর্ণ বিবরণীতে ---- */}
+            {reportType === 'shop-rent' && (
             <div className="shop-page is-first">
             <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />
             {headBlock}
@@ -1720,14 +1729,19 @@ export function ReportView({
                 {' '}দোকানওয়ারি ভাড়াটিয়া, বকেয়া ও অ্যাডভান্সের হিসাব পরের পাতায়।
               </span>
             </div>
-            </div>{/* /১ম পাতা */}
+            </div>
+            )}{/* /১ম পাতা */}
 
-            {/* ---- ২য় পাতা: দোকানওয়ারি হিসাব, অ্যাডভান্স, স্বাক্ষর ---- */}
-            <div className="shop-page">
+            {/* ---- ২য় পাতা: দোকানওয়ারি হিসাব, অ্যাডভান্স, স্বাক্ষর।
+                 "দোকানওয়ারি সারসংক্ষেপ" রিপোর্টে এটিই একমাত্র পাতা — শিরোনামসহ, কেবল ক ছক ---- */}
+            <div className={`shop-page${reportType === 'shop-summary' ? ' is-first' : ''}`}>
             <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />
+            {reportType === 'shop-summary' && headBlock}
+            {reportType === 'shop-rent' && (
             <div className="shop-page-title">
               ক. দোকানওয়ারি হিসাব সারসংক্ষেপ — {monthShort} পর্যন্ত (ভাড়াটিয়া, ধার্য, জমা, বকেয়া)
             </div>
+            )}
             <table className="print-table tbl-shop-summary">
               <thead>
                 <tr>
@@ -1795,6 +1809,7 @@ export function ReportView({
               </tfoot>
             </table>
 
+            {reportType === 'shop-rent' && (<>
             <div className="shop-page-title">খ. অ্যাডভান্স (জামানত) হিসাব — ভাড়াটিয়াওয়ারি, {monthShort} পর্যন্ত</div>
             <table className="print-table tbl-shop-deposit">
               <thead>
@@ -1888,12 +1903,15 @@ export function ReportView({
               </div>
             </div>
 
+            </>)}
+
             <div className="print-note print-note-sm">
               <span className="print-note-tag">বি.দ্র.</span>
               <span>
                 বকেয়া ভাড়া = মোট ধার্য − নগদ জমা − অ্যাডভান্স থেকে সমন্বয়; বিদ্যুৎ বিল বকেয়ার হিসাবে নেই। ভাড়াটিয়া
-                না থাকা ("ফাঁকা") মাসে ভাড়া ধার্য হয়নি। অ্যাডভান্স আয় নয় — সমিতির কাছে ভাড়াটিয়ার জমা, দোকান
-                ছাড়লে বাকিটা ফেরতযোগ্য; "ছেড়ে গেছেন — ফেরত বাকি" লেখা সারিতে ফেরত দেওয়া বাকি।
+                না থাকা ("ফাঁকা") মাসে ভাড়া ধার্য হয়নি।
+                {reportType === 'shop-rent' && <> অ্যাডভান্স আয় নয় — সমিতির কাছে ভাড়াটিয়ার জমা, দোকান
+                ছাড়লে বাকিটা ফেরতযোগ্য; "ছেড়ে গেছেন — ফেরত বাকি" লেখা সারিতে ফেরত দেওয়া বাকি।</>}
               </span>
             </div>
 
@@ -1911,7 +1929,7 @@ export function ReportView({
 
             <div className="print-foot">
               মোট দোকান: {U.bnDigits(shopMatrix.rows.length)} &nbsp;|&nbsp; {U.monthLabelShort(shopReportFrom)} হতে {monthShort} এর{' '}
-              (মোট {U.bnDigits(shopReportMonths)} মাস) &nbsp;|&nbsp; পাতা ২/২ &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
+              (মোট {U.bnDigits(shopReportMonths)} মাস) &nbsp;|&nbsp; {reportType === 'shop-rent' ? 'পাতা ২/২' : 'পাতা ১/১'} &nbsp;|&nbsp; নীলকণ্ঠ ফ্ল্যাট মালিক সমিতি সার্ভিস চার্জ সফটওয়্যার দ্বারা প্রস্তুত
             </div>
             {footerLinkBlock}
             </div>{/* /২য় পাতা */}
@@ -2402,7 +2420,7 @@ export function ReportView({
 
         {/* সব রিপোর্টের নিচে: ছাপা কাগজ থেকে সরাসরি অনলাইন রিপোর্টে যাওয়ার পথ।
             মাসভিত্তিক বকেয়া লিস্টে প্রতি পাতায়, দোকান ভাড়া বিবরণীতে ২য় পাতার ভেতরে। */}
-        {reportType !== 'dues-list' && reportType !== 'shop-rent' && reportType !== 'shop-ledger' && footerLinkBlock}
+        {reportType !== 'dues-list' && reportType !== 'shop-rent' && reportType !== 'shop-summary' && reportType !== 'shop-ledger' && footerLinkBlock}
       </div>
       </div>
     </div>
