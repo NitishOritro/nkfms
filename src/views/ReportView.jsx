@@ -1747,17 +1747,18 @@ export function ReportView({
                 <tr>
                   <th style={{ textAlign: 'left', width: '9%' }}>দোকান</th>
                   <th style={{ textAlign: 'left' }}>ভাড়াটিয়া ও সময়কাল</th>
+                  {reportType === 'shop-summary' && <th className="th-deposit" style={{ width: '10%' }}>জামানত<br />গ্রহণ</th>}
                   <th className="th-charge" style={{ width: '9%' }}>মাসিক<br />ভাড়া</th>
                   <th className="th-charge" style={{ width: '10%' }}>মোট ধার্য</th>
                   <th className="th-paid" style={{ width: '10%' }}>নগদ জমা</th>
                   <th className="th-paid" style={{ width: '9%' }}>অ্যাডভান্স<br />সমন্বয়</th>
                   <th className="th-due" style={{ width: '10%' }}>বকেয়া ভাড়া</th>
                   <th style={{ width: '9%' }}>বিদ্যুৎ বিল<br />আদায়</th>
-                  <th style={{ width: '16%' }}>ফাঁকা মাস</th>
+                  <th style={{ width: reportType === 'shop-summary' ? '10%' : '16%' }}>ফাঁকা মাস</th>
                 </tr>
               </thead>
               <tbody>
-                {shopSummaryRows.map(({ shop, status, tenancies, vacant }) => (
+                {shopSummaryRows.map(({ shop, status, tenancies, vacant, deposits }) => (
                   <tr key={shop.id}>
                     <td style={{ textAlign: 'left' }}><b>{Calc.shopLabel(shop)}</b></td>
                     <td style={{ textAlign: 'left', fontSize: '9.5px' }}>
@@ -1773,6 +1774,23 @@ export function ReportView({
                         </div>
                       )}
                     </td>
+                    {/* শুরুতে ভাড়াটিয়া কত জামানত দিয়েছেন — একাধিক ভাড়াটিয়া হলে নামসহ আলাদা লাইনে */}
+                    {reportType === 'shop-summary' && (
+                      <td className="col-deposit" style={{ textAlign: 'right' }}>
+                        {(() => {
+                          const got = (deposits || []).filter((d) => d.received > 0);
+                          if (!got.length) return DASH;
+                          return got.map((d, i) => (
+                            <div key={(d.tenancy && d.tenancy.id) || i}>
+                              {tenancies.length > 1 && d.tenancy && (
+                                <span style={{ fontSize: '8.5px', fontWeight: 400, color: '#475569' }}>{d.tenancy.tenantName || 'নামহীন'}: </span>
+                              )}
+                              <b>{U.bnNumber(d.received)}</b>
+                            </div>
+                          ));
+                        })()}
+                      </td>
+                    )}
                     <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(status.monthRate)}</td>
                     <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(status.charged)}</td>
                     <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(status.paidRent + status.paidOther)}</td>
@@ -1796,7 +1814,15 @@ export function ReportView({
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={3} style={{ textAlign: 'right' }}>সর্বমোট</td>
+                  {reportType === 'shop-summary' ? (
+                    <>
+                      <td colSpan={2} style={{ textAlign: 'right' }}>সর্বমোট</td>
+                      <td className="col-deposit" style={{ textAlign: 'right' }}>{shopDepositTot.received ? U.bnNumber(shopDepositTot.received) : DASH}</td>
+                      <td></td>
+                    </>
+                  ) : (
+                    <td colSpan={3} style={{ textAlign: 'right' }}>সর্বমোট</td>
+                  )}
                   <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(shopSumTot.charged)}</td>
                   <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(shopSumTot.cash)}</td>
                   <td style={{ textAlign: 'right' }}>{shopSumTot.adjust ? U.bnNumber(shopSumTot.adjust) : DASH}</td>
@@ -1910,6 +1936,7 @@ export function ReportView({
               <span>
                 বকেয়া ভাড়া = মোট ধার্য − নগদ জমা − অ্যাডভান্স থেকে সমন্বয়; বিদ্যুৎ বিল বকেয়ার হিসাবে নেই। ভাড়াটিয়া
                 না থাকা ("ফাঁকা") মাসে ভাড়া ধার্য হয়নি।
+                {reportType === 'shop-summary' && <> "জামানত গ্রহণ" = দোকান নেওয়ার সময় ভাড়াটিয়ার দেওয়া অ্যাডভান্স; এটি আয় নয়, ফেরতযোগ্য জমা।</>}
                 {reportType === 'shop-rent' && <> অ্যাডভান্স আয় নয় — সমিতির কাছে ভাড়াটিয়ার জমা, দোকান
                 ছাড়লে বাকিটা ফেরতযোগ্য; "ছেড়ে গেছেন — ফেরত বাকি" লেখা সারিতে ফেরত দেওয়া বাকি।</>}
               </span>
