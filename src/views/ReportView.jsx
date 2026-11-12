@@ -1926,23 +1926,28 @@ export function ReportView({
             <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />
             {headBlock}
             <div className="shop-ledger-info">
-              দোকান: <b className="flat-no">{Calc.shopLabel(shopLedgerShop)}</b> &nbsp;|&nbsp;
-              {shopLedgerTenancy || !shopLedgerHeadTenancy ? 'ভাড়াটিয়া' : (shopLedgerHeadTenancy.toMonth ? 'শেষ ভাড়াটিয়া' : 'বর্তমান ভাড়াটিয়া')}: <b className="owner-name">
-                {shopLedgerTenancy
-                  ? (shopLedgerTenancy.tenantName || 'নামহীন')
-                  : (Calc.shopTenantName(shopLedgerShop, selectedMonth) || Calc.shopTenantName(shopLedgerShop) || '—')}
-              </b> &nbsp;|&nbsp;
-              মোবাইল: <b>{(shopLedgerTenancy || Calc.shopTenancyFor(shopLedgerShop, selectedMonth) || {}).phone || shopLedgerShop.phone || '—'}</b> &nbsp;|&nbsp;
-              মাসিক ভাড়া: <b>{U.bnTaka(shopLedgerStatus.monthRate)}</b> &nbsp;|&nbsp;
+              <div className="sli"><span className="k">দোকান</span><b className="flat-no">{Calc.shopLabel(shopLedgerShop)}</b></div>
+              <div className="sli is-wide">
+                <span className="k">{shopLedgerTenancy || !shopLedgerHeadTenancy ? 'ভাড়াটিয়া' : (shopLedgerHeadTenancy.toMonth ? 'শেষ ভাড়াটিয়া' : 'বর্তমান ভাড়াটিয়া')}</span>
+                <b className="owner-name">
+                  {shopLedgerTenancy
+                    ? (shopLedgerTenancy.tenantName || 'নামহীন')
+                    : (Calc.shopTenantName(shopLedgerShop, selectedMonth) || Calc.shopTenantName(shopLedgerShop) || '—')}
+                </b>
+              </div>
+              <div className="sli"><span className="k">মোবাইল</span><b>{(shopLedgerTenancy || Calc.shopTenancyFor(shopLedgerShop, selectedMonth) || {}).phone || shopLedgerShop.phone || '—'}</b></div>
+              <div className="sli"><span className="k">মাসিক ভাড়া</span><b>{U.bnTaka(shopLedgerStatus.monthRate)}</b></div>
               {shopLedgerTenancy ? (
-                <>সময়কাল: <b>{U.monthLabelShort(shopLedgerFrom)} হতে {shopLedgerTenancy.toMonth ? U.monthLabelShort(shopLedgerTenancy.toMonth) : 'চলছে'}</b>
-                  {' '}({U.bnDigits(shopLedgerRows.length)} মাস)</>
+                <div className="sli is-wide"><span className="k">সময়কাল ({U.bnDigits(shopLedgerRows.length)} মাস)</span>
+                  <b>{U.monthLabelShort(shopLedgerFrom)} হতে {shopLedgerTenancy.toMonth ? U.monthLabelShort(shopLedgerTenancy.toMonth) : 'চলছে'}</b></div>
               ) : shopLedgerHeadTenancy ? (
-                <>ভাড়া শুরু: <b>{U.monthLabelShort(shopLedgerHeadTenancy.fromMonth)}</b>
-                  {shopLedgerHeadTenancy.toMonth ? <> ({U.monthLabelShort(shopLedgerHeadTenancy.toMonth)} পর্যন্ত)</> : ''}
-                  {' '}&nbsp;|&nbsp; দোকানে ভাড়া শুরু: <b>{U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))}</b></>
+                <>
+                  <div className="sli"><span className="k">ভাড়া শুরু</span>
+                    <b>{U.monthLabelShort(shopLedgerHeadTenancy.fromMonth)}{shopLedgerHeadTenancy.toMonth ? ` (${U.monthLabelShort(shopLedgerHeadTenancy.toMonth)} পর্যন্ত)` : ''}</b></div>
+                  <div className="sli"><span className="k">দোকানে ভাড়া শুরু</span><b>{U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))}</b></div>
+                </>
               ) : (
-                <>ভাড়া শুরু: <b>{U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))}</b></>
+                <div className="sli"><span className="k">ভাড়া শুরু</span><b>{U.monthLabelShort(Calc.shopStartMonth(shopLedgerShop, s))}</b></div>
               )}
             </div>
 
