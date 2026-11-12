@@ -1925,7 +1925,7 @@ export function ReportView({
             <div className="shop-page is-first">
             <Watermark logoSrc={LOGO_BASE64} opacity={0.12} />
             {headBlock}
-            <div style={{ marginBottom: '8px', fontSize: '11px', color: '#1e293b' }}>
+            <div className="shop-ledger-info">
               দোকান: <b className="flat-no">{Calc.shopLabel(shopLedgerShop)}</b> &nbsp;|&nbsp;
               {shopLedgerTenancy || !shopLedgerHeadTenancy ? 'ভাড়াটিয়া' : (shopLedgerHeadTenancy.toMonth ? 'শেষ ভাড়াটিয়া' : 'বর্তমান ভাড়াটিয়া')}: <b className="owner-name">
                 {shopLedgerTenancy
