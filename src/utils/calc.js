@@ -515,10 +515,35 @@ export function shopLabel(shop) {
 /** ভাড়াটিয়ার তালিকা, শুরুর মাস অনুযায়ী সাজানো (কেবল বৈধ fromMonth) */
 export function shopTenancies(shop) {
   const list = Array.isArray(shop.tenancies) ? shop.tenancies : [];
-  return list
+  const valid = list
     .filter((t) => t && /^\d{4}-\d{2}$/.test(t.fromMonth || ''))
     .slice()
     .sort((a, b) => U.monthIndex(a.fromMonth) - U.monthIndex(b.fromMonth));
+  if (valid.length) return valid;
+  // ইতিহাস লেখা নেই — দোকানের সাধারণ ঘর (নাম, শুরু, বন্ধ, জামানত) থেকেই এক
+  // সারির ইতিহাস ধরা হয়, যাতে রিপোর্ট ও অ্যাপে সব দোকান একই রকম দেখায়।
+  // id স্থির (legacy-<shopId>) — পরে আসল ইতিহাসে বদলালেও সারিগুলো মেলে।
+  // rent খালি = দোকানের হার/ভাড়ার ইতিহাস যেমন ছিল; ফলে হিসাব আগের মতোই।
+  if (/^\d{4}-\d{2}$/.test(shop.joinMonth || '')) {
+    return [legacyTenancy(shop)];
+  }
+  return [];
+}
+
+/** সাধারণ ঘর থেকে বানানো ইতিহাসের সারি — legacy: true চিহ্ন থাকে */
+export function legacyTenancy(shop) {
+  return {
+    id: `legacy-${shop.id}`,
+    legacy: true,
+    tenantName: shop.tenantName || '',
+    phone: shop.phone || '',
+    fromMonth: shop.joinMonth,
+    toMonth: shop.closedFrom ? U.addMonths(shop.closedFrom, -1) : '',
+    rent: '',
+    advanceAmount: Number(shop.advanceAmount) > 0 ? Number(shop.advanceAmount) : '',
+    advanceAdjust: Number(shop.advanceAdjust) > 0 ? Number(shop.advanceAdjust) : '',
+    note: shop.advanceNote || ''
+  };
 }
 
 /** ঐ মাসে কে ভাড়ায় ছিলেন — tenancy বা null (খালি তালিকায় সবসময় null) */

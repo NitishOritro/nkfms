@@ -122,6 +122,7 @@ function ShopForm({ draft, setDraft, onSave, onCancel, monthOptions, depositByTe
     set({
       tenancies: [{
         ...emptyTenancy(),
+        ...(draft.id ? { id: `legacy-${draft.id}` } : {}),
         tenantName: draft.tenantName || '',
         phone: draft.phone || '',
         fromMonth: draft.joinMonth || '',
@@ -449,7 +450,7 @@ function TenantChangeForm({ shop, data, monthOptions, collectors, dueUpTo, onSav
     }
 
     // ---- ভাড়াটিয়ার ইতিহাস ----
-    let list = tenancies.map((t) => ({ ...t }));
+    let list = tenancies.map((t) => { const c = { ...t }; delete c.legacy; return c; });
     let oldId = cur && !cur.legacy ? cur.id : '';
     if (!hasTen && cur) {
       // সাধারণ ঘরের তথ্য থেকে প্রথম সারি; ভাড়া খালি = দোকানের হার/ইতিহাস যেমন ছিল

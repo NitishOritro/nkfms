@@ -1982,7 +1982,7 @@ export function ReportView({
                       ? ` (${prev.tenancy.tenantName || 'নামহীন'} ${U.monthLabelShort(prev.tenancy.toMonth || prev.month)}-এ ছেড়েছেন)` : '';
                     marker = lr.tenancy
                       ? `${U.monthLabelShort(lr.tenancy.fromMonth)} হতে ${i === 0 ? '' : 'নতুন '}ভাড়াটিয়া: ${lr.tenancy.tenantName || 'নামহীন'}`
-                        + (Number(lr.tenancy.rent) > 0 ? ` — মাসিক ভাড়া ${U.bnNumber(lr.tenancy.rent)}` : '')
+                        + (() => { const r = Number(lr.tenancy.rent) > 0 ? Number(lr.tenancy.rent) : Calc.shopRentForMonth(shopLedgerShop, lr.tenancy.fromMonth); return r > 0 ? ` — মাসিক ভাড়া ${U.bnNumber(r)}` : ''; })()
                         + (Number(lr.tenancy.advanceAmount) > 0 ? `, জামানত ${U.bnNumber(lr.tenancy.advanceAmount)}` : '')
                         + left
                       : `${U.monthLabelShort(lr.month)} হতে দোকান ফাঁকা${left}`;
