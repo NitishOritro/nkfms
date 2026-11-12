@@ -1377,14 +1377,13 @@ export function ReportView({
                 <table className="print-table tbl-dues-summary">
                   <thead>
                     <tr>
-                      <th style={{ width: '5%' }}>ক্রম</th>
-                      <th className="th-flat" style={{ width: '8%' }}>ফ্ল্যাট</th>
-                      <th style={{ width: '18%', textAlign: 'left' }}>মালিকের নাম</th>
-                      <th style={{ width: '13%' }}>সার্ভিস চার্জ<br />গণনা শুরু</th>
-                      <th className="th-due" style={{ width: '22%' }}>বকেয়া যে মাস হতে<br />যে মাস পর্যন্ত</th>
-                      <th className="th-charge" style={{ width: '11%', textAlign: 'right' }}>মোট ধার্য</th>
-                      <th className="th-paid" style={{ width: '11%', textAlign: 'right' }}>মোট জমা</th>
-                      <th className="th-due" style={{ width: '12%', textAlign: 'right' }}>বকেয়া</th>
+                      <th style={{ width: '6%' }}>ক্রম</th>
+                      <th className="th-flat" style={{ width: '9%' }}>ফ্ল্যাট</th>
+                      <th style={{ width: '30%', textAlign: 'left' }}>মালিকের নাম</th>
+                      <th style={{ width: '16%' }}>সার্ভিস চার্জ<br />গণনা শুরু</th>
+                      <th className="th-charge" style={{ width: '13%', textAlign: 'right' }}>মোট ধার্য</th>
+                      <th className="th-paid" style={{ width: '13%', textAlign: 'right' }}>মোট জমা</th>
+                      <th className="th-due" style={{ width: '13%', textAlign: 'right' }}>বকেয়া</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1394,11 +1393,6 @@ export function ReportView({
                         <td style={{ textAlign: 'center' }}><b className="flat-no">{d.flat.flatNo}</b></td>
                         <td style={{ textAlign: 'left' }}><b>{d.flat.ownerName}</b></td>
                         <td style={{ textAlign: 'center' }}>{U.monthLabelShort(d.startMonth)}</td>
-                        <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                          {d.firstUnpaid
-                            ? <span className="due-amount">{duesRangeLabel(d)}</span>
-                            : '—'}
-                        </td>
                         <td className="col-charge" style={{ textAlign: 'right' }}>
                           {U.bnNumber(d.status.opening + d.status.charged)}
                         </td>
@@ -1413,7 +1407,7 @@ export function ReportView({
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan="5" style={{ textAlign: 'right' }}>সর্বমোট</td>
+                      <td colSpan="4" style={{ textAlign: 'right' }}>সর্বমোট</td>
                       <td className="col-charge" style={{ textAlign: 'right' }}>{U.bnNumber(duesTotals.charged)}</td>
                       <td className="col-paid" style={{ textAlign: 'right' }}>{U.bnNumber(duesTotals.paid)}</td>
                       <td style={{ textAlign: 'right' }}>
